@@ -1,0 +1,6 @@
+{
+  "name": "GlucoSense",
+  "description": "Advanced real-time metabolic monitoring, Type 2 Diabetes risk assessment, and clinical protocol suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
