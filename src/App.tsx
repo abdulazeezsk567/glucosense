@@ -18,8 +18,8 @@ import CareGuidanceTab from './components/CareGuidanceTab';
 import SOSModal from './components/SOSModal';
 import GlucoBot from './components/GlucoBot';
 import PatientPortal from './components/PatientPortal';
-import { TabId, Clinician, AssessmentRecord, GlucoseGoal } from './types';
-import { INITIAL_CLINICIAN, INITIAL_ASSESSMENT_HISTORY } from './data';
+import { TabId, Clinician, Patient, AssessmentRecord, GlucoseGoal } from './types';
+import { INITIAL_CLINICIAN, INITIAL_ASSESSMENT_HISTORY, CLINICAL_PATIENT } from './data';
 
 export default function App() {
   const [userSession, setUserSession] = useState<{
@@ -56,6 +56,17 @@ export default function App() {
   
   // Clinician profile state linked globally
   const [clinician, setClinician] = useState<Clinician>(INITIAL_CLINICIAN);
+
+  // Patient profile state linked globally
+  const [patient, setPatient] = useState<Patient>(() => {
+    const saved = localStorage.getItem('clinical_patient');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (err) {}
+    }
+    return CLINICAL_PATIENT;
+  });
   
   // Emergency care circle details
   const [emergencyContact, setEmergencyContact] = useState({
@@ -67,6 +78,26 @@ export default function App() {
   // Emergency SOS Modal triggers
   const [isSOSOpen, setIsSOSOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Restore authenticated session on startup
+  React.useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('No active session');
+      })
+      .then(data => {
+        if (data && data.role && data.profile) {
+          setUserSession({ role: data.role, profile: data.profile });
+          if (data.role === 'clinician') {
+            setClinician(data.profile);
+          }
+        }
+      })
+      .catch(() => {
+        // No valid session, stay on login screen
+      });
+  }, []);
 
   // Core callback when a new neural assessment is run
   const handleAddAssessment = (newRecord: {
@@ -112,8 +143,11 @@ export default function App() {
         console.warn('Google GSI disableAutoSelect error:', err);
       }
     }
-    setUserSession(null);
-    setActiveTab('dashboard');
+    fetch('/api/auth/logout', { method: 'POST' })
+      .finally(() => {
+        setUserSession(null);
+        setActiveTab('dashboard');
+      });
   };
 
   // Require Auth gateway login
@@ -179,6 +213,7 @@ export default function App() {
         currentGlucose={currentGlucose}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        patient={patient}
       />
 
       {/* Main content viewport block */}
@@ -230,8 +265,8 @@ export default function App() {
 
           {activeTab === 'settings' && (
             <SettingsTab
-              clinician={clinician}
-              setClinician={setClinician}
+              patient={patient}
+              setPatient={setPatient}
               emergencyContact={emergencyContact}
               setEmergencyContact={setEmergencyContact}
               theme={theme}
@@ -241,7 +276,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'active-patient' && <ActivePatientTab />}
+          {activeTab === 'active-patient' && <ActivePatientTab patient={patient} />}
 
           {activeTab === 'care-guidance' && <CareGuidanceTab />}
         </main>

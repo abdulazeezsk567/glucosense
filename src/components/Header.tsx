@@ -27,7 +27,6 @@ export default function Header({
   onToggleSidebar,
 }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showPhotoModal, setShowPhotoModal] = useState(false);
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'dashboard', label: 'Patient Dashboard' },
@@ -108,20 +107,6 @@ export default function Header({
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#5adace] rounded-full"></span>
           </button>
         </div>
-
-        {/* Physician photo avatar button */}
-        <button
-          onClick={() => setShowPhotoModal(true)}
-          className="rounded-full overflow-hidden border border-[#45464d]/50 hover:border-[#5adace] hover:scale-105 transition-all cursor-pointer shrink-0"
-          title="View Full Clinical Profile Photo"
-        >
-          <img
-            src={clinician.avatarUrl}
-            alt={clinician.fullName}
-            className="w-8 h-8 md:w-9 md:h-9 rounded-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-        </button>
       </div>
 
       {/* Mobile Navigation Dropdown List */}
@@ -161,45 +146,6 @@ export default function Header({
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Clinician Profile Photo Viewer Modal in Lower Middle */}
-      {showPhotoModal && (
-        <div 
-          className="fixed inset-0 bg-[#051424]/80 backdrop-blur-sm z-50 flex items-end justify-center p-4 pb-16 sm:pb-24"
-          onClick={() => setShowPhotoModal(false)}
-        >
-          <div 
-            className="bg-[#122131] border border-[#45464d]/40 rounded-3xl p-6 max-w-sm w-full relative shadow-2xl animate-in fade-in slide-in-from-bottom-20 duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button 
-              onClick={() => setShowPhotoModal(false)}
-              className="absolute top-4 right-4 p-1.5 bg-[#1c2b3c] hover:bg-[#2c3a4c] rounded-full text-[#c6c6cd] hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-4.5 h-4.5" />
-            </button>
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-48 h-48 rounded-full overflow-hidden border-4 border-[#5adace] shadow-lg shadow-[#5adace]/10">
-                <img 
-                  src={clinician.avatarUrl} 
-                  alt={clinician.fullName} 
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-[#d4e4fa]">{clinician.fullName}</h3>
-                <p className="text-xs text-[#5adace] font-semibold mt-0.5">{clinician.specialization}</p>
-                <p className="text-[10px] font-mono text-[#c6c6cd]/50 mt-1 uppercase tracking-wider">{clinician.medicalId}</p>
-              </div>
-              <div className="w-full pt-3 border-t border-[#45464d]/20 text-xs text-[#c6c6cd]">
-                <p className="font-medium text-[#bec6e0]">{clinician.primaryFacility}</p>
-                <p className="text-[10px] text-[#c6c6cd]/40 mt-1">EHR Active Session Practitioner</p>
-              </div>
-            </div>
-          </div>
         </div>
       )}
     </header>

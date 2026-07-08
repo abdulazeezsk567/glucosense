@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { TabId, Clinician } from '../types';
+import { CLINICAL_PATIENT } from '../data';
 
 interface SidebarProps {
   activeTab: TabId;
@@ -30,6 +31,7 @@ interface SidebarProps {
   currentGlucose?: number;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  patient: any;
 }
 
 export default function Sidebar({
@@ -40,6 +42,7 @@ export default function Sidebar({
   currentGlucose,
   isCollapsed = false,
   onToggleCollapse,
+  patient,
 }: SidebarProps) {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
 
@@ -183,32 +186,32 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Doctor Clinician Info badge button */}
+        {/* Patient Info badge button */}
         <button
           onClick={() => setShowPhotoModal(true)}
           className={`w-full text-left bg-[#0d1c2d] hover:bg-[#1c2b3c]/60 ${isCollapsed ? 'p-2 justify-center' : 'p-3'} rounded-xl flex items-center gap-3 border border-[#45464d]/20 hover:border-[#5adace]/40 transition-all cursor-pointer group`}
-          title={isCollapsed ? clinician.fullName : "View Full Clinical Profile Photo"}
+          title={isCollapsed ? patient.name : "View Full Patient Profile Photo"}
         >
           <img
-            src={clinician.avatarUrl}
-            alt={clinician.fullName}
+            src={patient.avatarUrl}
+            alt={patient.name}
             className="w-9 h-9 rounded-full object-cover border border-[#bec6e0]/30 shrink-0 group-hover:scale-105 transition-transform"
             referrerPolicy="no-referrer"
           />
           {!isCollapsed && (
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-[#d4e4fa] truncate leading-tight group-hover:text-[#5adace] transition-colors">
-                {clinician.fullName}
+                {patient.name}
               </p>
               <span className="text-[10px] font-mono text-[#c6c6cd]/70 uppercase tracking-tight block">
-                {clinician.medicalId}
+                ID: {patient.id}
               </span>
             </div>
           )}
         </button>
       </div>
 
-      {/* Clinician Profile Photo Viewer Modal in Lower Middle */}
+      {/* Patient Profile Photo Viewer Modal in Lower Middle */}
       {showPhotoModal && (
         <div 
           className="fixed inset-0 bg-[#051424]/80 backdrop-blur-sm z-[9999] flex items-end justify-center p-4 pb-16 sm:pb-24"
@@ -227,29 +230,31 @@ export default function Sidebar({
             <div className="flex flex-col items-center text-center space-y-4">
               <div className="w-48 h-48 rounded-full overflow-hidden border-4 border-[#5adace] shadow-lg shadow-[#5adace]/10">
                 <img 
-                  src={clinician.avatarUrl} 
-                  alt={clinician.fullName} 
+                  src={patient.avatarUrl} 
+                  alt={patient.name} 
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-[#d4e4fa]">{clinician.fullName}</h3>
-                <p className="text-xs text-[#5adace] font-semibold mt-0.5">{clinician.specialization}</p>
-                <p className="text-[10px] font-mono text-[#c6c6cd]/50 mt-1 uppercase tracking-wider">{clinician.medicalId}</p>
+                <h3 className="text-lg font-bold text-[#d4e4fa]">{patient.name}</h3>
+                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ffb4ab]/15 border border-[#ffb4ab]/30 text-[#ffb4ab]">
+                  {patient.type} Diabetes
+                </span>
+                <p className="text-xs text-[#c6c6cd] mt-2 font-medium">Age: {patient.age} • ID: {patient.id}</p>
               </div>
-              <div className="w-full pt-3 border-t border-[#45464d]/20 text-xs text-[#c6c6cd]">
-                <p className="font-medium text-[#bec6e0]">{clinician.primaryFacility}</p>
-                <p className="text-[10px] text-[#c6c6cd]/40 mt-1">EHR Active Session Practitioner</p>
+              <div className="w-full pt-3 border-t border-[#45464d]/20 text-xs text-[#c6c6cd] space-y-1">
+                <p className="font-semibold text-[#5adace]">Dexcom G6 CGMS Active</p>
+                <p className="text-[10px] text-[#c6c6cd]/40">Active Remote Monitoring Patient File</p>
               </div>
               <button
                 onClick={() => {
                   setShowPhotoModal(false);
-                  setActiveTab('settings');
+                  setActiveTab('active-patient');
                 }}
                 className="w-full py-2 bg-[#5adace] hover:bg-[#43c4b9] text-[#051424] font-bold text-xs rounded-xl shadow transition-all cursor-pointer"
               >
-                Go to Profile Settings
+                Go to Deep-Dive Profile
               </button>
             </div>
           </div>

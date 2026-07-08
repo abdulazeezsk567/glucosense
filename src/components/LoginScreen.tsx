@@ -23,10 +23,11 @@ interface LoginScreenProps {
 
 export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: LoginScreenProps) {
   const [isLoginTab, setIsLoginTab] = useState(true);
-  const [medicalId, setMedicalId] = useState('MED-8924-XXL');
-  const [password, setPassword] = useState('password');
+  const [emailId, setEmailId] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+
 
   // Patient Registration States
   const [patientName, setPatientName] = useState('');
@@ -41,256 +42,153 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [newlyCreatedPatient, setNewlyCreatedPatient] = useState<any>(null);
 
-  // Google Sign-In and Sign-Up custom interactive states
-  const [googleAuthMode, setGoogleAuthMode] = useState<'clinician' | 'patient' | null>(null);
   const [googleSigningIn, setGoogleSigningIn] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
 
-  // Parse JWT token helper
-  const decodeJwt = (token: string) => {
-    try {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        window
-          .atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      return JSON.parse(jsonPayload);
-    } catch (error) {
-      console.error('Failed to decode JWT:', error);
-      return null;
-    }
-  };
-
-  const handleGoogleSuccess = (credentialToken: string) => {
-    setGoogleSigningIn(true);
-    setGoogleAuthError(null);
-    try {
-      const decoded = decodeJwt(credentialToken);
-      if (!decoded || !decoded.email) {
-        throw new Error('Google identity handshake was unsuccessful or email is missing.');
-      }
-
-      // Determine which role was active during login
-      const activeRole = localStorage.getItem('gsi_active_role') as 'clinician' | 'patient' || 'clinician';
-
-      // Load registered accounts
-      const googleUsersStr = localStorage.getItem('google_users');
-      const googleUsers = googleUsersStr ? JSON.parse(googleUsersStr) : [];
-      
-      let existingUser = googleUsers.find(
-        (u: any) => u.email.toLowerCase() === decoded.email.toLowerCase() && u.role === activeRole
-      );
-
-      if (existingUser) {
-        // Treat as SIGN IN (route straight to Dashboard / Portal)
-        setTimeout(() => {
-          setGoogleSigningIn(false);
-          onLoginSuccess(activeRole, existingUser);
-        }, 1000);
-      } else {
-        // Treat as SIGN UP (create record, route to onboarding step)
-        if (activeRole === 'clinician') {
-          const newClinician = {
-            fullName: decoded.name || 'Dr. Sarah Jenkins',
-            email: decoded.email,
-            avatarUrl: decoded.picture || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDl5T3Q35e_5_uY_Se47_AB9a1u1QTxoRb4vSL0ypz837J0dPoz3HvJDFTRLSi5TyE9ExjAWN9ImxQNsQITfK9Xo3QPfaC2XmL6R1fYG6rFSYwcHPDcAk7_mpnDcHB5-KFYkDNCj5Pm7c_07Q-g-AaYozf_9eMVuKZjo2IKasg0-cONKBIZm3svNkfsyT9siTf6Eg9tT4BCCmZ1CnkuT8NNbEeilHJjqqJXJE6qTGDXUV4liddKuAyGDyaJZ0_t_L65btCsYRksVEY',
-            medicalId: `MED-${Math.floor(1000 + Math.random() * 9000)}-GGL`,
-            specialization: 'Endocrinologist',
-            primaryFacility: 'EHR Connected Google Suite',
-            authProvider: 'google',
-            role: 'clinician'
-          };
-          
-          googleUsers.push(newClinician);
-          localStorage.setItem('google_users', JSON.stringify(googleUsers));
-          
-          setTimeout(() => {
-            setGoogleSigningIn(false);
-            onLoginSuccess('clinician', newClinician);
-          }, 1000);
-        } else {
-          // Patient Registration
-          const patientData = {
-            id: `GS-${Math.floor(1000 + Math.random() * 9000)}`,
-            name: decoded.name || 'Sarah Jenkins',
-            age: 38,
-            type: 'Type 1',
-            cgmId: 'DEX-G6-GOOG9',
-            phone: '+1 (555) 019-2834',
-            physicianCode: 'MED-8924-XXL',
-            email: decoded.email,
-            avatarUrl: decoded.picture || '',
-            authProvider: 'google',
-            role: 'patient'
-          };
-
-          googleUsers.push(patientData);
-          localStorage.setItem('google_users', JSON.stringify(googleUsers));
-
-          if (onPatientRegistered) {
-            onPatientRegistered({
-              id: patientData.id,
-              name: patientData.name,
-              age: patientData.age,
-              type: patientData.type,
-              avatarUrl: patientData.avatarUrl,
-            });
-          }
-
-          setTimeout(() => {
-            setGoogleSigningIn(false);
-            setNewlyCreatedPatient(patientData);
-            setRegistrationSuccess(true);
-          }, 1000);
-        }
-      }
-    } catch (err: any) {
-      console.error('Google credentials lookup error:', err);
-      setGoogleAuthError(err.message || 'Establishment of Google identity session failed.');
-      setGoogleSigningIn(false);
-    }
-  };
-
   useEffect(() => {
-    // Initialize Google Identity Services
-    const initGsi = () => {
-      if (window.google?.accounts?.id) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
-            callback: (response: any) => {
-              if (response.credential) {
-                handleGoogleSuccess(response.credential);
-              } else {
-                setGoogleAuthError('Google Auth returned an empty credential response.');
-              }
-            },
-            auto_select: false,
-          });
-
-          // Render transparent overlays if containers exist
-          const clinicianOverlay = document.getElementById('google-btn-overlay-clinician');
-          if (clinicianOverlay) {
-            window.google.accounts.id.renderButton(clinicianOverlay, {
-              type: 'standard',
-              theme: 'outline',
-              size: 'large',
-              width: clinicianOverlay.offsetWidth || 340,
-            });
-          }
-
-          const patientOverlay = document.getElementById('google-btn-overlay-patient');
-          if (patientOverlay) {
-            window.google.accounts.id.renderButton(patientOverlay, {
-              type: 'standard',
-              theme: 'outline',
-              size: 'large',
-              width: patientOverlay.offsetWidth || 340,
-            });
-          }
-        } catch (err: any) {
-          console.error('GSI Init Error:', err);
-        }
+    const handleOAuthMessage = (event: MessageEvent) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+        return;
+      }
+      
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        setGoogleSigningIn(false);
+        setGoogleAuthError(null);
+        const { role, profile } = event.data;
+        onLoginSuccess(role, profile);
+      } else if (event.data?.type === 'OAUTH_AUTH_FAILURE') {
+        setGoogleSigningIn(false);
+        setGoogleAuthError(event.data.error || 'Identity verification failed.');
       }
     };
 
-    // Poll for window.google
-    const timer = setInterval(() => {
-      if (window.google?.accounts?.id) {
-        initGsi();
-        clearInterval(timer);
-      }
-    }, 500);
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
+  }, [onLoginSuccess]);
 
-    return () => clearInterval(timer);
-  }, [isLoginTab, googleSigningIn]);
-
-  const handleSelectGoogleAccount = (account: { name: string; email: string; role: 'clinician' | 'patient' }) => {
+  const handleGoogleAuth = async (mode: 'login' | 'register') => {
     setGoogleSigningIn(true);
-    setTimeout(() => {
-      setGoogleSigningIn(false);
-      setGoogleAuthMode(null);
-      if (account.role === 'clinician') {
-        const clinicianProfile = {
-          ...INITIAL_CLINICIAN,
-          fullName: account.name,
-          medicalId: `MED-${Math.floor(1000 + Math.random() * 9000)}-GGL`,
-          primaryFacility: 'EHR Connected Google Suite',
-        };
-        onLoginSuccess('clinician', clinicianProfile);
-      } else {
-        const patientData = {
-          id: `GS-${Math.floor(1000 + Math.random() * 9000)}`,
-          name: account.name,
-          age: 38,
-          type: 'Type 1',
-          cgmId: 'DEX-G6-GOOG9',
-          phone: '+1 (555) 019-2834',
-          physicianCode: 'MED-8924-XXL',
-          email: account.email,
-          avatarUrl: '',
-        };
-        if (onPatientRegistered) {
-          onPatientRegistered({
-            id: patientData.id,
-            name: patientData.name,
-            age: patientData.age,
-            type: patientData.type,
-            avatarUrl: '',
+    setGoogleAuthError(null);
+    try {
+      const originUrl = window.location.origin;
+      const redirectUri = `${originUrl}/auth/callback`;
+      
+      console.log('--- Google OAuth Handshake Initiated ---');
+      console.log('Origin URL being sent:', originUrl);
+      console.log('Redirect URI target:', redirectUri);
+      
+      const res = await fetch(`/api/auth/google/url?origin=${encodeURIComponent(originUrl)}&mode=${mode}`);
+      if (!res.ok) {
+        const errorData = await res.json();
+        if (errorData.diagnostics) {
+          console.error('OAuth Setup Issue Diagnostics:', errorData.diagnostics);
+        }
+        throw new Error(errorData.error || 'Failed to generate Google Sign-In secure channel.');
+      }
+      
+      const data = await res.json();
+      const { url, diagnostics } = data;
+      
+      if (diagnostics) {
+        console.log('Successfully loaded Google Client ID:', diagnostics.clientId);
+        console.log('Google Redirect Callback expected:', diagnostics.redirectUri);
+        console.log('Helpful Tips:', diagnostics.publishingStatusHelp);
+      }
+      
+      const width = 500;
+      const height = 650;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const popup = window.open(
+        url,
+        'google_oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top},scrollbars=yes`
+      );
+
+      if (!popup) {
+        throw new Error('OAuth handshake window was blocked by your browser. Please allow popups for this portal.');
+      }
+
+      // Detect user closing the popup window manually
+      const checkPopupClosed = setInterval(() => {
+        if (!popup || popup.closed) {
+          clearInterval(checkPopupClosed);
+          setGoogleSigningIn((current) => {
+            if (current) {
+              setGoogleAuthError('The Google verification window was closed before completion.');
+              return false;
+            }
+            return current;
           });
         }
-        setNewlyCreatedPatient(patientData);
-        setRegistrationSuccess(true);
-      }
-    }, 1200);
+      }, 1000);
+
+    } catch (err: any) {
+      setGoogleSigningIn(false);
+      setGoogleAuthError(err.message || 'Identity handshake could not be established.');
+    }
   };
 
-  const handleAuthenticate = (e: React.FormEvent) => {
+  const handleAuthenticate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAuthenticating(true);
+    setGoogleAuthError(null);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailId, password }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Authentication failure.');
+      }
+      const data = await res.json();
       setIsAuthenticating(false);
-      onLoginSuccess('clinician', INITIAL_CLINICIAN);
-    }, 1200);
+      onLoginSuccess(data.role, data.profile);
+    } catch (err: any) {
+      setIsAuthenticating(false);
+      setGoogleAuthError(err.message || 'EHR verification failed.');
+    }
   };
 
-  const handleRegisterPatient = (e: React.FormEvent) => {
+  const handleRegisterPatient = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsRegistering(true);
+    setGoogleAuthError(null);
 
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: patientName,
+          email: patientEmail,
+          age: patientAge,
+          type: diabetesType,
+          cgmId,
+          phone: patientPhone,
+          physicianCode,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Enrollment registration failed.');
+      }
+      const data = await res.json();
       setIsRegistering(false);
-      const generatedId = `GS-${Math.floor(1000 + Math.random() * 9000)}`;
-      const patientData = {
-        id: generatedId,
-        name: patientName || 'Sarah Jenkins',
-        age: parseInt(patientAge) || 42,
-        type: diabetesType,
-        cgmId: cgmId || 'DEX-G6-GS8821',
-        phone: patientPhone || '+1 (555) 019-2834',
-        physicianCode: physicianCode || 'MED-8924-XXL',
-        email: patientEmail || 'patient@ehr-telemetry.io',
-        avatarUrl: '',
-      };
-      setNewlyCreatedPatient(patientData);
+      setNewlyCreatedPatient(data.profile);
       setRegistrationSuccess(true);
 
-      // Notify parent to append to assessment history if it's open
       if (onPatientRegistered) {
-        onPatientRegistered({
-          id: generatedId,
-          name: patientData.name,
-          age: patientData.age,
-          type: patientData.type,
-          avatarUrl: '',
-        });
+        onPatientRegistered(data.profile);
       }
-    }, 1500);
+    } catch (err: any) {
+      setIsRegistering(false);
+      setGoogleAuthError(err.message || 'Continuous telemetry link enrollment failed.');
+    }
   };
 
   const handleQuickBypass = () => {
@@ -358,7 +256,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               }}
               className="w-full py-2.5 bg-[#1c2b3c]/80 hover:bg-[#2c3a4c] border border-[#45464d]/30 text-xs font-bold rounded-xl transition-all cursor-pointer text-[#5adace]"
             >
-              Go to Physician Sign-In Gate
+              Go to Patient Sign-In Gate
             </button>
           </div>
         </div>
@@ -395,17 +293,23 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
         {/* Form authentication tabs */}
         <div className="flex bg-[#0d1c2d] p-1 rounded-xl border border-[#45464d]/15">
           <button
-            onClick={() => setIsLoginTab(true)}
+            onClick={() => {
+              setIsLoginTab(true);
+              setGoogleAuthError(null);
+            }}
             className={`w-1/2 py-2.5 rounded-lg text-xs font-bold tracking-wide transition-all cursor-pointer ${
               isLoginTab
                 ? 'bg-[#1c2b3c] text-[#5adace] shadow-sm'
                 : 'text-[#c6c6cd] hover:text-[#d4e4fa]'
             }`}
           >
-            Physician Sign-In
+            Patient Sign-In
           </button>
           <button
-            onClick={() => setIsLoginTab(false)}
+            onClick={() => {
+              setIsLoginTab(false);
+              setGoogleAuthError(null);
+            }}
             className={`w-1/2 py-2.5 rounded-lg text-xs font-bold tracking-wide transition-all cursor-pointer ${
               !isLoginTab
                 ? 'bg-[#1c2b3c] text-[#5adace] shadow-sm'
@@ -417,29 +321,29 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
         </div>
 
         {isLoginTab ? (
-          /* Physician login form layout */
+          /* Patient login form layout */
           <form onSubmit={handleAuthenticate} className="space-y-5">
-            {/* Input 1 */}
+            {/* Input 1 - Email ID */}
             <div className="space-y-1.5">
               <label className="text-xs text-[#c6c6cd]/90 font-medium block">
-                Medical Practitioner ID
+                Email ID
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-[#c6c6cd]/50 font-mono text-xs">
-                  ID
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none">
+                  <Mail className="w-4 h-4 text-[#c6c6cd]/50" />
                 </span>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={medicalId}
-                  onChange={(e) => setMedicalId(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none font-mono"
-                  placeholder="e.g. MED-8924-XXL"
+                  value={emailId}
+                  onChange={(e) => setEmailId(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
+                  placeholder="e.g. patient@glucosense.io"
                 />
               </div>
             </div>
 
-            {/* Input 2 */}
+            {/* Input 2 - Password */}
             <div className="space-y-1.5">
               <label className="text-xs text-[#c6c6cd]/90 font-medium block">Password</label>
               <div className="relative">
@@ -474,7 +378,6 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                 />
                 <span>Keep HIPAA gateway logged in</span>
               </label>
-              <span className="text-[#5adace] hover:underline cursor-pointer">Forgot ID?</span>
             </div>
 
             {/* Submit Button */}
@@ -500,19 +403,14 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               <div className="flex-1 h-px bg-[#45464d]/25"></div>
             </div>
 
-            <div 
-              className="relative w-full"
-              onMouseDown={() => {
-                localStorage.setItem('gsi_active_role', 'clinician');
-                setGoogleSigningIn(true);
-              }}
-            >
+            <div className="relative w-full">
               <button
                 type="button"
                 disabled={googleSigningIn}
+                onClick={() => handleGoogleAuth('login')}
                 className="w-full py-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/30 text-[#d4e4fa] font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-md"
               >
-                {googleSigningIn && localStorage.getItem('gsi_active_role') === 'clinician' ? (
+                {googleSigningIn ? (
                   <span className="w-4 h-4 border-2 border-[#5adace] border-t-transparent rounded-full animate-spin"></span>
                 ) : (
                   <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -522,32 +420,17 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                     />
                   </svg>
                 )}
-                <span>{googleSigningIn && localStorage.getItem('gsi_active_role') === 'clinician' ? 'Connecting Securely...' : 'Continue with Google'}</span>
+                <span>{googleSigningIn ? 'Connecting Securely...' : 'Continue with Google'}</span>
               </button>
-              
-              <div 
-                id="google-btn-overlay-clinician" 
-                className="absolute inset-0 w-full h-full opacity-[0.01] overflow-hidden z-10 [&_iframe]:w-full [&_iframe]:h-full cursor-pointer"
-              />
             </div>
 
-            {googleAuthError && localStorage.getItem('gsi_active_role') === 'clinician' && (
+            {googleAuthError && (
               <div className="p-3 bg-red-950/45 border border-red-500/35 text-[#ffb4ab] text-xs rounded-xl space-y-1 mt-2.5">
                 <p className="font-semibold">⚠️ Connection Issue</p>
                 <p className="text-[10px] text-[#c6c6cd]">{googleAuthError}</p>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setGoogleAuthMode('clinician');
-                    setGoogleAuthError(null);
-                    setGoogleSigningIn(false);
-                  }} 
-                  className="text-[#5adace] hover:underline font-mono text-[9px] uppercase tracking-wider font-bold pt-1.5 block"
-                >
-                  Click here to use Mock Sandbox list
-                </button>
               </div>
             )}
+
           </form>
         ) : (
           /* Complete, fully functional Patient Registration form layout */
@@ -702,26 +585,6 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                   />
                 </div>
               </div>
-
-              {/* Physician Code */}
-              <div className="col-span-2 space-y-1">
-                <label className="text-[10px] text-[#c6c6cd]/80 uppercase tracking-wider font-semibold block">
-                  Assigned Physician ID
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-[#c6c6cd]/50 font-mono text-[10px]">
-                    ID
-                  </span>
-                  <input
-                    type="text"
-                    required
-                    value={physicianCode}
-                    onChange={(e) => setPhysicianCode(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none font-mono"
-                    placeholder="MED-8924-XXL"
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Submit Register Button */}
@@ -747,19 +610,14 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               <div className="flex-1 h-px bg-[#45464d]/25"></div>
             </div>
 
-            <div 
-              className="relative w-full"
-              onMouseDown={() => {
-                localStorage.setItem('gsi_active_role', 'patient');
-                setGoogleSigningIn(true);
-              }}
-            >
+            <div className="relative w-full">
               <button
                 type="button"
                 disabled={googleSigningIn}
+                onClick={() => handleGoogleAuth('register')}
                 className="w-full py-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/30 text-[#d4e4fa] font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2.5 cursor-pointer shadow-md"
               >
-                {googleSigningIn && localStorage.getItem('gsi_active_role') === 'patient' ? (
+                {googleSigningIn ? (
                   <span className="w-4 h-4 border-2 border-[#5adace] border-t-transparent rounded-full animate-spin"></span>
                 ) : (
                   <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
@@ -769,32 +627,17 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                     />
                   </svg>
                 )}
-                <span>{googleSigningIn && localStorage.getItem('gsi_active_role') === 'patient' ? 'Connecting Securely...' : 'Instant Google Registration'}</span>
+                <span>{googleSigningIn ? 'Connecting Securely...' : 'Instant Google Registration'}</span>
               </button>
-              
-              <div 
-                id="google-btn-overlay-patient" 
-                className="absolute inset-0 w-full h-full opacity-[0.01] overflow-hidden z-10 [&_iframe]:w-full [&_iframe]:h-full cursor-pointer"
-              />
             </div>
 
-            {googleAuthError && localStorage.getItem('gsi_active_role') === 'patient' && (
+            {googleAuthError && (
               <div className="p-3 bg-red-950/45 border border-red-500/35 text-[#ffb4ab] text-xs rounded-xl space-y-1 mt-2.5">
                 <p className="font-semibold">⚠️ Registration Issue</p>
                 <p className="text-[10px] text-[#c6c6cd]">{googleAuthError}</p>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    setGoogleAuthMode('patient');
-                    setGoogleAuthError(null);
-                    setGoogleSigningIn(false);
-                  }} 
-                  className="text-[#5adace] hover:underline font-mono text-[9px] uppercase tracking-wider font-bold pt-1.5 block"
-                >
-                  Click here to use Mock Sandbox list
-                </button>
               </div>
             )}
+
           </form>
         )}
 
@@ -809,112 +652,6 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
         </div>
       </div>
 
-      {/* Google Account Selector Modal Overlay */}
-      {googleAuthMode && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-[#122131] border border-[#45464d]/60 rounded-3xl max-w-sm w-full p-6 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            {/* Google Identity Logo & Header */}
-            <div className="text-center space-y-2">
-              <svg className="w-8 h-8 mx-auto" viewBox="0 0 24 24">
-                <path
-                  fill="#EA4335"
-                  d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114A5.53 5.53 0 0 1 8.4 13a5.53 5.53 0 0 1 5.59-5.514c1.486 0 2.829.543 3.867 1.438l3.143-3.143C19.105 3.962 16.733 3 13.99 3 8.471 3 4 7.471 4 13s4.471 10 9.99 10c5.762 0 9.562-4.048 9.562-9.714 0-.648-.057-1.286-.171-1.99H12.24z"
-                />
-              </svg>
-              <h2 className="text-lg font-bold text-white tracking-tight">Sign in with Google</h2>
-              <p className="text-xs text-[#c6c6cd]">to continue to <span className="font-semibold text-[#5adace]">GlucoSense Portal</span></p>
-            </div>
-
-            {/* Account List */}
-            {googleSigningIn ? (
-              <div className="py-8 text-center space-y-3">
-                <div className="w-8 h-8 border-2 border-[#5adace] border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-xs font-semibold text-[#5adace] animate-pulse">Establishing OAuth handshake protocol...</p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {googleAuthMode === 'clinician' ? (
-                  <>
-                    {/* Clinician Account 1 */}
-                    <button
-                      onClick={() => handleSelectGoogleAccount({ name: 'Abdul Azeez', email: 'abdulazeezsk56789@gmail.com', role: 'clinician' })}
-                      className="w-full flex items-center gap-3 p-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/25 hover:border-[#5adace]/40 rounded-xl text-left transition-all cursor-pointer group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#5adace]/10 flex items-center justify-center font-bold text-xs text-[#5adace] group-hover:scale-105 transition-transform shrink-0">
-                        AA
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-[#d4e4fa] truncate leading-tight">Abdul Azeez</p>
-                        <p className="text-[10px] text-[#c6c6cd]/60 truncate mt-0.5">abdulazeezsk56789@gmail.com</p>
-                      </div>
-                    </button>
-
-                    {/* Clinician Account 2 */}
-                    <button
-                      onClick={() => handleSelectGoogleAccount({ name: 'Dr. Sarah Jenkins', email: 'sarah.jenkins@glucosense.io', role: 'clinician' })}
-                      className="w-full flex items-center gap-3 p-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/25 hover:border-[#5adace]/40 rounded-xl text-left transition-all cursor-pointer group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#42e09a]/10 flex items-center justify-center font-bold text-xs text-[#42e09a] group-hover:scale-105 transition-transform shrink-0">
-                        SJ
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-[#d4e4fa] truncate leading-tight">Dr. Sarah Jenkins</p>
-                        <p className="text-[10px] text-[#c6c6cd]/60 truncate mt-0.5">sarah.jenkins@glucosense.io</p>
-                      </div>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Patient Account 1 */}
-                    <button
-                      onClick={() => handleSelectGoogleAccount({ name: 'Abdul Azeez', email: 'abdulazeezsk56789@gmail.com', role: 'patient' })}
-                      className="w-full flex items-center gap-3 p-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/25 hover:border-[#5adace]/40 rounded-xl text-left transition-all cursor-pointer group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#5adace]/10 flex items-center justify-center font-bold text-xs text-[#5adace] group-hover:scale-105 transition-transform shrink-0">
-                        AA
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-[#d4e4fa] truncate leading-tight">Abdul Azeez</p>
-                        <p className="text-[10px] text-[#c6c6cd]/60 truncate mt-0.5">abdulazeezsk56789@gmail.com</p>
-                      </div>
-                    </button>
-
-                    {/* Patient Account 2 */}
-                    <button
-                      onClick={() => handleSelectGoogleAccount({ name: 'Marcus Reyes', email: 'marcus.reyes@patient-telemetry.io', role: 'patient' })}
-                      className="w-full flex items-center gap-3 p-3 bg-[#0d1c2d] hover:bg-[#1c2b3c] border border-[#45464d]/25 hover:border-[#5adace]/40 rounded-xl text-left transition-all cursor-pointer group"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[#42e09a]/10 flex items-center justify-center font-bold text-xs text-[#42e09a] group-hover:scale-105 transition-transform shrink-0">
-                        MR
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-[#d4e4fa] truncate leading-tight">Marcus Reyes</p>
-                        <p className="text-[10px] text-[#c6c6cd]/60 truncate mt-0.5">marcus.reyes@patient-telemetry.io</p>
-                      </div>
-                    </button>
-                  </>
-                )}
-
-                {/* Account list footer helper */}
-                <p className="text-[9px] text-[#c6c6cd]/40 text-center leading-normal pt-2 font-mono uppercase tracking-wider">
-                  Secure OAuth2 Client ID Handshake Active
-                </p>
-              </div>
-            )}
-
-            {/* Cancel Button */}
-            {!googleSigningIn && (
-              <button
-                type="button"
-                onClick={() => setGoogleAuthMode(null)}
-                className="w-full py-2 bg-[#1c2b3c] hover:bg-[#2c3a4c] border border-[#45464d]/30 text-xs font-bold rounded-xl transition-all cursor-pointer text-[#c6c6cd] text-center"
-              >
-                Cancel Authentication
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -16,13 +16,18 @@ import {
   Coffee,
   MoreVertical,
   Dna,
+  X,
 } from 'lucide-react';
 import { CLINICAL_PATIENT, RECENT_CLINICAL_EVENTS } from '../data';
 import { ClinicalEvent } from '../types';
 
-export default function ActivePatientTab() {
-  const patient = CLINICAL_PATIENT;
+interface ActivePatientTabProps {
+  patient: any;
+}
+
+export default function ActivePatientTab({ patient }: ActivePatientTabProps) {
   const [events, setEvents] = useState<ClinicalEvent[]>(RECENT_CLINICAL_EVENTS);
+  const [showPatientPhotoModal, setShowPatientPhotoModal] = useState(false);
 
   // New custom event logger form states
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -62,12 +67,18 @@ export default function ActivePatientTab() {
       {/* Patient Biography Card Profile */}
       <div className="bg-[#122131]/75 border border-[#45464d]/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 backdrop-blur">
         <div className="flex items-center gap-5 w-full md:w-auto">
-          <img
-            src={patient.avatarUrl}
-            alt={patient.name}
-            className="w-16 h-16 md:w-20 md:h-20 rounded-2xl object-cover border-2 border-[#5adace] shrink-0"
-            referrerPolicy="no-referrer"
-          />
+          <button
+            onClick={() => setShowPatientPhotoModal(true)}
+            className="rounded-2xl overflow-hidden border-2 border-[#5adace] hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+            title="View Full Patient Profile Photo"
+          >
+            <img
+              src={patient.avatarUrl}
+              alt={patient.name}
+              className="w-16 h-16 md:w-20 md:h-20 object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </button>
           <div>
             <div className="flex items-center gap-2.5">
               <h3 className="text-xl font-bold text-[#d4e4fa] tracking-tight">{patient.name}</h3>
@@ -269,6 +280,47 @@ export default function ActivePatientTab() {
           </div>
         </div>
       </div>
+
+      {/* Patient Profile Photo Viewer Modal in Lower Middle */}
+      {showPatientPhotoModal && (
+        <div 
+          className="fixed inset-0 bg-[#051424]/80 backdrop-blur-sm z-[9999] flex items-end justify-center p-4 pb-16 sm:pb-24"
+          onClick={() => setShowPatientPhotoModal(false)}
+        >
+          <div 
+            className="bg-[#122131] border border-[#45464d]/40 rounded-3xl p-6 max-w-sm w-full relative shadow-2xl animate-in fade-in slide-in-from-bottom-20 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setShowPatientPhotoModal(false)}
+              className="absolute top-4 right-4 p-1.5 bg-[#1c2b3c] hover:bg-[#2c3a4c] rounded-full text-[#c6c6cd] hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-4.5 h-4.5" />
+            </button>
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-48 h-48 rounded-full overflow-hidden border-4 border-[#5adace] shadow-lg shadow-[#5adace]/10">
+                <img 
+                  src={patient.avatarUrl} 
+                  alt={patient.name} 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#d4e4fa]">{patient.name}</h3>
+                <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#ffb4ab]/15 border border-[#ffb4ab]/30 text-[#ffb4ab]">
+                  {patient.type} Diabetes
+                </span>
+                <p className="text-xs text-[#c6c6cd] mt-2 font-medium">Age: {patient.age} • ID: {patient.id}</p>
+              </div>
+              <div className="w-full pt-3 border-t border-[#45464d]/20 text-xs text-[#c6c6cd] space-y-1">
+                <p className="font-semibold text-[#5adace]">Dexcom G6 CGMS Active</p>
+                <p className="text-[10px] text-[#c6c6cd]/40">Active Remote Monitoring Patient File</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
