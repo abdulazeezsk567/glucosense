@@ -4,6 +4,8 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { OAuth2Client } from "google-auth-library";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -54,6 +56,120 @@ function parseCookies(cookieHeader?: string) {
   return cookies;
 }
 
+// Encrypt and Decrypt Helpers for PII (phone, physicianCode)
+const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
+const ENCRYPTION_KEY = (() => {
+  const rawKey = process.env.PII_ENCRYPTION_KEY || 'default-secret-glucosense-telemetry-key-32chars!';
+  return crypto.createHash('sha256').update(rawKey).digest();
+})();
+
+function encrypt(text: string): string {
+  if (!text) return '';
+  try {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    return `${iv.toString('hex')}:${encrypted}`;
+  } catch (err) {
+    console.error('Encryption failed:', err);
+    return text;
+  }
+}
+
+function decrypt(cipherText: string): string {
+  if (!cipherText) return '';
+  if (!cipherText.includes(':')) {
+    return cipherText;
+  }
+  try {
+    const [ivHex, encryptedHex] = cipherText.split(':');
+    if (!ivHex || !encryptedHex) return cipherText;
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, ENCRYPTION_KEY, iv);
+    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    return cipherText;
+  }
+}
+
+function encryptUser(user: any) {
+  if (!user) return user;
+  return {
+    ...user,
+    phone: encrypt(user.phone),
+    physicianCode: encrypt(user.physicianCode)
+  };
+}
+
+function decryptUser(user: any) {
+  if (!user) return user;
+  return {
+    ...user,
+    phone: decrypt(user.phone),
+    physicianCode: decrypt(user.physicianCode)
+  };
+}
+
+// Session Management Helpers
+interface Session {
+  id: string;
+  email: string;
+  expiresAt: number;
+}
+
+const sessions = new Map<string, Session>();
+
+function createSession(email: string) {
+  const sessionId = crypto.randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+  sessions.set(sessionId, { id: sessionId, email: email.toLowerCase(), expiresAt });
+  return { sessionId, expiresAt };
+}
+
+function getSession(sessionId: string) {
+  const session = sessions.get(sessionId);
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(sessionId);
+    return null;
+  }
+  return session;
+}
+
+function invalidateSession(sessionId: string) {
+  sessions.delete(sessionId);
+}
+
+// HTML Escaping Utility for XSS Mitigation
+function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Origin Sanitization & Validation
+function isValidOrigin(origin: string): boolean {
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      return true;
+    }
+    if (parsed.hostname.endsWith('.run.app')) {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // User persistent database structure
 const USERS_FILE = path.join(process.cwd(), "users-db.json");
 
@@ -75,21 +191,49 @@ const DEFAULT_USERS = [
 
 function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(DEFAULT_USERS, null, 2));
-    return DEFAULT_USERS;
+    const defaultUsersWithHash = DEFAULT_USERS.map(u => ({
+      ...u,
+      passwordHash: bcrypt.hashSync("password", 10)
+    }));
+    try {
+      const encryptedUsers = defaultUsersWithHash.map(encryptUser);
+      fs.writeFileSync(USERS_FILE, JSON.stringify(encryptedUsers, null, 2));
+    } catch (err) {
+      console.error("Error writing default users:", err);
+    }
+    return defaultUsersWithHash;
   }
   try {
     const data = fs.readFileSync(USERS_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    let updated = false;
+    const migrated = parsed.map((u: any) => {
+      const decrypted = decryptUser(u);
+      if (!decrypted.passwordHash) {
+        decrypted.passwordHash = bcrypt.hashSync("password", 10);
+        updated = true;
+      }
+      return decrypted;
+    });
+    if (updated) {
+      const encryptedUsers = migrated.map(encryptUser);
+      fs.writeFileSync(USERS_FILE, JSON.stringify(encryptedUsers, null, 2));
+    }
+    return migrated;
   } catch (err) {
     console.error("Error reading users file, falling back to default:", err);
-    return DEFAULT_USERS;
+    const defaultUsersWithHash = DEFAULT_USERS.map(u => ({
+      ...u,
+      passwordHash: bcrypt.hashSync("password", 10)
+    }));
+    return defaultUsersWithHash;
   }
 }
 
 function saveUsers(users: any[]) {
   try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+    const encryptedUsers = users.map(encryptUser);
+    fs.writeFileSync(USERS_FILE, JSON.stringify(encryptedUsers, null, 2));
   } catch (err) {
     console.error("Error saving users file:", err);
   }
@@ -183,13 +327,18 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
       stateData = { mode: state as string };
     }
   }
-  const origin = stateData.origin || `${req.protocol}://${req.get('host')}`;
+  let origin = stateData.origin || `${req.protocol}://${req.get('host')}`;
+  if (!isValidOrigin(origin)) {
+    origin = `${req.protocol}://${req.get('host')}`;
+  }
   const redirectUri = `${origin}/auth/callback`;
   const clientId = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
 
   // Handle Google OAuth error responses (e.g. access_denied, consent dismissed)
   if (error) {
     console.error(`[OAuth Callback Error] Code: ${error}, Description: ${error_description}`);
+    const escapedError = escapeHtml(error as string);
+    const escapedDesc = escapeHtml(error_description as string || 'You cancelled the sign-in prompt or denied access to the required scopes.');
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -245,8 +394,8 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
         <body>
           <div class="card">
             <h3>⚠️ Google Authorization Blocked</h3>
-            <div class="badge">Google Error: ${error}</div>
-            <p>${error_description || 'You cancelled the sign-in prompt or denied access to the required scopes.'}</p>
+            <div class="badge">Google Error: ${escapedError}</div>
+            <p>${escapedDesc}</p>
             <p style="font-size: 11px; opacity: 0.8; margin-top: 15px;">
               <strong>Checklist:</strong> If in 'Testing' mode on Google Cloud Console, your account must be added as a designated 'Test User'.
             </p>
@@ -318,10 +467,11 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
       saveUsers(users);
     }
 
-    // Set HTTP-Only, Secure, SameSite=None Session Cookie
+    // Create random unguessable session token
+    const { sessionId } = createSession(email);
     res.setHeader(
       'Set-Cookie',
-      `session_user=${encodeURIComponent(email)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
+      `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
     );
 
     // Communicate success to opener window and auto-close popup
@@ -442,22 +592,22 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
             <p>The backend was unable to securely verify the authorization code returned by Google. This occurs when the configuration in Google Cloud Console does not match your current running runtime parameters.</p>
             
             <div class="err-desc">
-              ${error.message || 'Internal Exchange Error: Failed to resolve authorization code.'}
+              ${escapeHtml(error.message || 'Internal Exchange Error: Failed to resolve authorization code.')}
             </div>
 
             <div class="section-title">Runtime Diagnostics</div>
             <div class="diagnostic-grid">
               <div class="diagnostic-row">
                 <div class="diagnostic-label">Client ID:</div>
-                <div class="diagnostic-value">${clientId || '⚠️ MISSING'}</div>
+                <div class="diagnostic-value">${escapeHtml(clientId || '⚠️ MISSING')}</div>
               </div>
               <div class="diagnostic-row">
                 <div class="diagnostic-label">Redirect URI:</div>
-                <div class="diagnostic-value">${redirectUri}</div>
+                <div class="diagnostic-value">${escapeHtml(redirectUri)}</div>
               </div>
               <div class="diagnostic-row">
                 <div class="diagnostic-label">Origin:</div>
-                <div class="diagnostic-value">${origin}</div>
+                <div class="diagnostic-value">${escapeHtml(origin)}</div>
               </div>
               <div class="diagnostic-row">
                 <div class="diagnostic-label">Client Secret:</div>
@@ -470,8 +620,8 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
               <ol>
                 <li>Open your <strong>Google Cloud Console</strong> &rarr; <em>APIs & Services</em> &rarr; <em>Credentials</em>.</li>
                 <li>Edit your <strong>OAuth 2.0 Client ID</strong> (Web Application).</li>
-                <li>Under <strong>Authorized JavaScript origins</strong>, add:<br/><code style="background:#1c1212; padding:2px 4px; color:#5adace; font-size:11px; border-radius:4px;">${origin}</code></li>
-                <li>Under <strong>Authorized redirect URIs</strong>, add exactly:<br/><code style="background:#1c1212; padding:2px 4px; color:#5adace; font-size:11px; border-radius:4px;">${redirectUri}</code></li>
+                <li>Under <strong>Authorized JavaScript origins</strong>, add:<br/><code style="background:#1c1212; padding:2px 4px; color:#5adace; font-size:11px; border-radius:4px;">${escapeHtml(origin)}</code></li>
+                <li>Under <strong>Authorized redirect URIs</strong>, add exactly:<br/><code style="background:#1c1212; padding:2px 4px; color:#5adace; font-size:11px; border-radius:4px;">${escapeHtml(redirectUri)}</code></li>
                 <li>Verify your <code>GOOGLE_CLIENT_SECRET</code> is updated in the settings page of your workspace container.</li>
               </ol>
             </div>
@@ -495,15 +645,24 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
 // 3. Retrieve current session user
 app.get('/api/auth/me', rateLimiter(60, 60 * 1000), (req, res) => {
   const cookies = parseCookies(req.headers.cookie);
-  const sessionUserEmail = cookies['session_user'];
+  const sessionToken = cookies['session_token'];
 
-  if (!sessionUserEmail) {
+  if (!sessionToken) {
     return res.status(401).json({ error: "No active session." });
   }
 
-  const email = decodeURIComponent(sessionUserEmail).toLowerCase();
+  const session = getSession(sessionToken);
+  if (!session) {
+    // Clear invalid/expired cookie
+    res.setHeader(
+      'Set-Cookie',
+      'session_token=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
+    );
+    return res.status(401).json({ error: "Session expired or invalid." });
+  }
+
   const users = loadUsers();
-  const user = users.find(u => u.email.toLowerCase() === email);
+  const user = users.find(u => u.email.toLowerCase() === session.email);
 
   if (!user) {
     return res.status(401).json({ error: "Session user not found." });
@@ -515,52 +674,38 @@ app.get('/api/auth/me', rateLimiter(60, 60 * 1000), (req, res) => {
 // 4. Secure Credential-Based Fallback Sign-In
 app.post('/api/auth/login', rateLimiter(5, 15 * 60 * 1000), (req, res) => {
   const { email, password } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: "Email ID is required." });
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email ID and password are required." });
   }
 
   const emailLower = email.toLowerCase();
   const users = loadUsers();
-  let user = users.find(u => u.email.toLowerCase() === emailLower);
+  const user = users.find(u => u.email.toLowerCase() === emailLower);
 
-  if (!user) {
-    // Standard credential signup with fallback
-    const nameFromEmail = email.split('@')[0].split('.').map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-    user = {
-      id: 'GS-8821',
-      name: nameFromEmail || 'Sarah Jenkins',
-      age: 42,
-      type: 'Type 2',
-      cgmId: 'DEX-G6-GOOG9',
-      phone: '+1 (555) 019-2834',
-      physicianCode: 'MED-8924-XXL',
-      email: emailLower,
-      avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDz-QKHmgjB-ETlXBg0RJ4qZxhtVseGDORvro4aZAZXXAuI8ua6v0WnoaB5LzDymMIknOAdBf2vagGnJ6MQPMZ_DuMgfmbcjcyi4V0yVfo_kPk_AwcYFmXVgseboKPeJYUFUbG_AP_K58HWIPhsTEo72tE7HsrtfoDuC_gJYdNmdLG7RzRs7e9JAkG422C9ToV8ZSVXHvf-VnyQEti2ErsqyB9VQpPkU1C1Z4TxSb-mMwZqGxl2FNpbkpntuUXd_JzWXSun_ny5r1c',
-      role: 'patient',
-      authProvider: 'credentials'
-    };
-    users.push(user);
-    saveUsers(users);
+  if (!user || !user.passwordHash || !bcrypt.compareSync(password, user.passwordHash)) {
+    return res.status(401).json({ error: "Invalid email or password." });
   }
+
+  const { sessionId } = createSession(emailLower);
 
   res.setHeader(
     'Set-Cookie',
-    `session_user=${encodeURIComponent(emailLower)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
+    `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
   );
 
-  res.json({ role: 'patient', profile: user });
+  res.json({ role: user.role || 'patient', profile: user });
 });
 
 // 5. Secure Patient Registration
 app.post('/api/auth/register', rateLimiter(5, 15 * 60 * 1000), (req, res) => {
-  const { name, email, age, type, cgmId, phone, physicianCode } = req.body;
-  if (!email || !name) {
-    return res.status(400).json({ error: "Name and email are required." });
+  const { name, email, age, type, cgmId, phone, physicianCode, password } = req.body;
+  if (!email || !name || !password) {
+    return res.status(400).json({ error: "Name, email, and password are required." });
   }
 
   const emailLower = email.toLowerCase();
   const users = loadUsers();
-  let existing = users.find(u => u.email.toLowerCase() === emailLower);
+  const existing = users.find(u => u.email.toLowerCase() === emailLower);
 
   if (existing) {
     return res.status(400).json({ error: "A patient profile with this email address already exists." });
@@ -571,32 +716,85 @@ app.post('/api/auth/register', rateLimiter(5, 15 * 60 * 1000), (req, res) => {
     id: generatedId,
     name,
     age: parseInt(age) || 42,
-    type,
-    cgmId: cgmId || 'DEX-G6-GS8821',
-    phone: phone || '+1 (555) 019-2834',
+    type: type || 'Not Specified',
+    cgmId: cgmId || '',
+    phone: phone || '',
     physicianCode: physicianCode || 'MED-8924-XXL',
     email: emailLower,
     avatarUrl: '',
     role: 'patient',
-    authProvider: 'credentials'
+    authProvider: 'credentials',
+    passwordHash: bcrypt.hashSync(password, 10)
   };
 
   users.push(newUser);
   saveUsers(users);
 
+  const { sessionId } = createSession(emailLower);
+
   res.setHeader(
     'Set-Cookie',
-    `session_user=${encodeURIComponent(emailLower)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
+    `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
   );
 
   res.json({ role: 'patient', profile: newUser });
 });
 
+// 5.5. Update Patient/User Profile Endpoint
+app.post('/api/auth/profile', rateLimiter(10, 60 * 1000), (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies['session_token'];
+
+  if (!sessionToken) {
+    return res.status(401).json({ error: "No active session." });
+  }
+
+  const session = getSession(sessionToken);
+  if (!session) {
+    return res.status(401).json({ error: "Session expired or invalid." });
+  }
+
+  const { name, age, type, cgmId, phone, physicianCode, avatarUrl } = req.body;
+  const users = loadUsers();
+  const userIndex = users.findIndex(u => u.email.toLowerCase() === session.email);
+
+  if (userIndex === -1) {
+    return res.status(404).json({ error: "User profile not found." });
+  }
+
+  // Update fields if provided
+  const updatedUser = {
+    ...users[userIndex],
+    name: name !== undefined ? name : users[userIndex].name,
+    age: age !== undefined ? parseInt(age) || users[userIndex].age : users[userIndex].age,
+    type: type !== undefined ? type : users[userIndex].type,
+    cgmId: cgmId !== undefined ? cgmId : users[userIndex].cgmId,
+    phone: phone !== undefined ? phone : users[userIndex].phone,
+    physicianCode: physicianCode !== undefined ? physicianCode : users[userIndex].physicianCode,
+    avatarUrl: avatarUrl !== undefined ? avatarUrl : users[userIndex].avatarUrl,
+  };
+
+  users[userIndex] = updatedUser;
+  saveUsers(users);
+
+  res.json({ status: "success", profile: updatedUser });
+});
+
 // 6. Sign-out endpoint
 app.post('/api/auth/logout', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionToken = cookies['session_token'];
+  if (sessionToken) {
+    invalidateSession(sessionToken);
+  }
+
+  // Clear both cookies to ensure clean state
   res.setHeader(
     'Set-Cookie',
-    'session_user=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
+    [
+      'session_user=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0',
+      'session_token=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
+    ]
   );
   res.json({ status: "success" });
 });

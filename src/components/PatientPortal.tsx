@@ -45,9 +45,10 @@ interface PatientPortalProps {
     email: string;
   };
   onLogout: () => void;
+  onUpdateProfile?: (updatedPatient: any) => void;
 }
 
-export default function PatientPortal({ patient, onLogout }: PatientPortalProps) {
+export default function PatientPortal({ patient, onLogout, onUpdateProfile }: PatientPortalProps) {
   const [currentGlucose, setCurrentGlucose] = useState<number>(112);
   const [glucoseHistory, setGlucoseHistory] = useState<number[]>([104, 108, 115, 110, 112, 109, 112]);
   const [trend, setTrend] = useState<'stable' | 'rising' | 'falling'>('stable');
@@ -470,6 +471,60 @@ export default function PatientPortal({ patient, onLogout }: PatientPortalProps)
     setSosActive(false);
   };
 
+  // Profile editing state
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState(patient.name || '');
+  const [editAge, setEditAge] = useState(String(patient.age || ''));
+  const [editType, setEditType] = useState(patient.type || '');
+  const [editCgmId, setEditCgmId] = useState(patient.cgmId || '');
+  const [editPhone, setEditPhone] = useState(patient.phone || '');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Keep edit state updated if patient prop changes
+  useEffect(() => {
+    setEditName(patient.name || '');
+    setEditAge(String(patient.age || ''));
+    setEditType(patient.type || '');
+    setEditCgmId(patient.cgmId || '');
+    setEditPhone(patient.phone || '');
+  }, [patient]);
+
+  const handleSavePatientProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+    setProfileError(null);
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName,
+          age: parseInt(editAge) || undefined,
+          type: editType,
+          cgmId: editCgmId,
+          phone: editPhone
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to update profile settings.');
+      }
+
+      const data = await res.json();
+      localStorage.setItem('clinical_patient', JSON.stringify(data.profile));
+      if (onUpdateProfile) {
+        onUpdateProfile(data.profile);
+      }
+      setIsEditingProfile(false);
+    } catch (err: any) {
+      setProfileError(err.message || 'Unable to update profile settings.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#051424] text-[#c6c6cd] font-sans p-4 md:p-8 relative overflow-x-hidden">
       {/* Decorative ambient gradients */}
@@ -815,33 +870,142 @@ export default function PatientPortal({ patient, onLogout }: PatientPortalProps)
 
               {/* Static Medical Dossier Index */}
               <div className="bg-[#122131]/40 border border-[#45464d]/30 rounded-3xl p-6 backdrop-blur-md space-y-4">
-                <div className="flex items-center gap-2 text-[#5adace]">
-                  <FileText className="w-5 h-5" />
-                  <h3 className="font-display font-bold text-base text-[#d4e4fa]">EHR Patient Profile</h3>
+                <div className="flex items-center justify-between gap-2 border-b border-[#45464d]/20 pb-2">
+                  <div className="flex items-center gap-2 text-[#5adace]">
+                    <FileText className="w-5 h-5" />
+                    <h3 className="font-display font-bold text-base text-[#d4e4fa]">EHR Patient Profile</h3>
+                  </div>
+                  {!isEditingProfile ? (
+                    <button
+                      onClick={() => setIsEditingProfile(true)}
+                      className="text-[10px] text-[#5adace] hover:text-white font-bold bg-[#1c2b3c] hover:bg-[#2c3a4c] px-2.5 py-1 rounded-lg border border-[#5adace]/30 transition-colors cursor-pointer uppercase tracking-wider font-mono"
+                    >
+                      Edit Profile
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setIsEditingProfile(false);
+                        setProfileError(null);
+                      }}
+                      className="text-[10px] text-gray-400 hover:text-white font-bold bg-[#1c2b3c] hover:bg-[#2c3a4c] px-2.5 py-1 rounded-lg border border-[#45464d]/30 transition-colors cursor-pointer uppercase tracking-wider font-mono"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
 
-                <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
-                    <span className="text-[#c6c6cd]/50">Diagnosis status:</span>
-                    <span className="text-[#42e09a] font-bold">{patient.type}</span>
+                {profileError && (
+                  <div className="text-[11px] text-red-400 font-mono bg-red-950/20 border border-red-500/30 p-2.5 rounded-lg">
+                    {profileError}
                   </div>
-                  <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
-                    <span className="text-[#c6c6cd]/50">Age Bracket:</span>
-                    <span className="text-[#d4e4fa]">{patient.age} Years Old</span>
+                )}
+
+                {isEditingProfile ? (
+                  <form onSubmit={handleSavePatientProfile} className="space-y-3.5 text-xs">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#c6c6cd]/60 uppercase tracking-wider font-semibold font-mono block">Patient Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#c6c6cd]/60 uppercase tracking-wider font-semibold font-mono block">Age (Years)</label>
+                      <input
+                        type="number"
+                        required
+                        value={editAge}
+                        onChange={(e) => setEditAge(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#c6c6cd]/60 uppercase tracking-wider font-semibold font-mono block">Diabetes Type</label>
+                      <select
+                        value={editType}
+                        onChange={(e) => setEditType(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none cursor-pointer"
+                      >
+                        <option value="Not Specified">Not Specified</option>
+                        <option value="Normal">Normal</option>
+                        <option value="Prediabetes">Prediabetes</option>
+                        <option value="Type 1">Type 1</option>
+                        <option value="Type 2">Type 2</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#c6c6cd]/60 uppercase tracking-wider font-semibold font-mono block">CGM ID Code</label>
+                      <input
+                        type="text"
+                        value={editCgmId}
+                        onChange={(e) => setEditCgmId(e.target.value)}
+                        placeholder="e.g. DEX-G6-GS8821"
+                        className="w-full px-3 py-1.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#c6c6cd]/60 uppercase tracking-wider font-semibold font-mono block">Contact Phone</label>
+                      <input
+                        type="text"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        placeholder="e.g. +1 (555) 019-2834"
+                        className="w-full px-3 py-1.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingProfile}
+                      className="w-full py-2 bg-[#5adace] hover:opacity-90 disabled:opacity-50 text-[#051424] font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer uppercase tracking-wider font-mono mt-2"
+                    >
+                      {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Patient Name:</span>
+                      <span className="text-[#d4e4fa] font-bold">{patient.name}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Diagnosis status:</span>
+                      <span className="text-[#42e09a] font-bold">{patient.type || 'Not Specified'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Age Bracket:</span>
+                      <span className="text-[#d4e4fa]">{patient.age} Years Old</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Primary Email:</span>
+                      <span className="text-[#d4e4fa] truncate max-w-[150px]">{patient.email}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Contact Phone:</span>
+                      <span className="text-[#5adace] font-semibold">{patient.phone || 'Not Provided'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">CGM ID Code:</span>
+                      <span className="text-[#5adace] font-mono">{patient.cgmId || 'Not Configured'}</span>
+                    </div>
+                    <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
+                      <span className="text-[#c6c6cd]/50">Assigned Doctor:</span>
+                      <span className="text-[#d4e4fa] font-semibold">Dr. Sarah Jenkins</span>
+                    </div>
+                    <div className="flex justify-between py-1 border-none">
+                      <span className="text-[#c6c6cd]/50">Physician ID:</span>
+                      <span className="text-[#d4e4fa]">{patient.physicianCode}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
-                    <span className="text-[#c6c6cd]/50">Primary Email:</span>
-                    <span className="text-[#d4e4fa] truncate max-w-[150px]">{patient.email}</span>
-                  </div>
-                  <div className="flex justify-between py-1.5 border-b border-[#45464d]/15">
-                    <span className="text-[#c6c6cd]/50">Assigned Doctor:</span>
-                    <span className="text-[#5adace] font-semibold">Dr. Sarah Jenkins</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-none">
-                    <span className="text-[#c6c6cd]/50">Physician ID:</span>
-                    <span className="text-[#d4e4fa]">{patient.physicianCode}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
             </div>

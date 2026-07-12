@@ -196,6 +196,9 @@ export default function App() {
         <PatientPortal
           patient={userSession.profile}
           onLogout={handleLogout}
+          onUpdateProfile={(updatedPatient) => {
+            setUserSession(prev => prev ? { ...prev, profile: updatedPatient } : null);
+          }}
         />
       </div>
     );

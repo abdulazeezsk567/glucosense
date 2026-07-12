@@ -32,9 +32,9 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
   // Patient Registration States
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('42');
-  const [diabetesType, setDiabetesType] = useState('Type 2');
-  const [cgmId, setCgmId] = useState('DEX-G6-GS8821');
-  const [patientPhone, setPatientPhone] = useState('+1 (555) 019-2834');
+  const [diabetesType, setDiabetesType] = useState('');
+  const [cgmId, setCgmId] = useState('');
+  const [patientPhone, setPatientPhone] = useState('');
   const [physicianCode, setPhysicianCode] = useState('MED-8924-XXL');
   const [patientEmail, setPatientEmail] = useState('');
   const [patientPassword, setPatientPassword] = useState('');
@@ -171,6 +171,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
           cgmId,
           phone: patientPhone,
           physicianCode,
+          password: patientPassword,
         }),
       });
       if (!res.ok) {
@@ -527,7 +528,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               {/* Diabetes Type */}
               <div className="space-y-1">
                 <label className="text-[10px] text-[#c6c6cd]/80 uppercase tracking-wider font-semibold block">
-                  Diabetes Type
+                  Diabetes Type (Optional)
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -538,6 +539,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                     onChange={(e) => setDiabetesType(e.target.value)}
                     className="w-full pl-9 pr-2 py-2 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none appearance-none cursor-pointer"
                   >
+                    <option value="">Not Specified</option>
                     <option value="Normal">Normal</option>
                     <option value="Prediabetes">Prediabetes</option>
                     <option value="Type 1">Type 1</option>
@@ -549,7 +551,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               {/* CGM Sensor ID */}
               <div className="space-y-1">
                 <label className="text-[10px] text-[#c6c6cd]/80 uppercase tracking-wider font-semibold block">
-                  CGM ID Code
+                  CGM ID Code (Optional)
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -557,11 +559,10 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                   </span>
                   <input
                     type="text"
-                    required
                     value={cgmId}
                     onChange={(e) => setCgmId(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none font-mono"
-                    placeholder="DEX-G6-GS8821"
+                    placeholder="e.g. DEX-G6-GS8821"
                   />
                 </div>
               </div>
@@ -569,7 +570,7 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
               {/* Phone Number */}
               <div className="space-y-1">
                 <label className="text-[10px] text-[#c6c6cd]/80 uppercase tracking-wider font-semibold block">
-                  Contact Phone
+                  Contact Phone (Optional)
                 </label>
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -577,11 +578,10 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
                   </span>
                   <input
                     type="tel"
-                    required
                     value={patientPhone}
                     onChange={(e) => setPatientPhone(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
-                    placeholder="+1 (555) 019-2834"
+                    placeholder="e.g. +1 (555) 019-2834"
                   />
                 </div>
               </div>

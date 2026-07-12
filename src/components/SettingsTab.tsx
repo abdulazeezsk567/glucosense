@@ -379,6 +379,28 @@ export default function SettingsTab({
                 className="w-full px-3.5 py-2.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
               />
             </div>
+            {/* Input 5 */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#c6c6cd] font-medium block">Contact Phone</label>
+              <input
+                type="text"
+                value={profile.phone || ''}
+                onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none"
+                placeholder="+1 (555) 019-2834"
+              />
+            </div>
+            {/* Input 6 */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-[#c6c6cd] font-medium block">CGM ID Code</label>
+              <input
+                type="text"
+                value={profile.cgmId || ''}
+                onChange={(e) => setProfile({ ...profile, cgmId: e.target.value })}
+                className="w-full px-3.5 py-2.5 bg-[#0d1c2d] border border-[#45464d]/30 focus:border-[#5adace] rounded-xl text-xs text-[#d4e4fa] outline-none font-mono"
+                placeholder="DEX-G6-GS8821"
+              />
+            </div>
           </div>
         </div>
 
