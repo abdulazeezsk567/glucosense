@@ -32,6 +32,7 @@ interface SidebarProps {
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   patient: any;
+  onOpenHelpSupport?: () => void;
 }
 
 export default function Sidebar({
@@ -43,6 +44,7 @@ export default function Sidebar({
   isCollapsed = false,
   onToggleCollapse,
   patient,
+  onOpenHelpSupport,
 }: SidebarProps) {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
 
@@ -169,7 +171,7 @@ export default function Sidebar({
       <div className={`p-4 border-t border-[#45464d]/20 ${isCollapsed ? 'space-y-4 px-2' : 'space-y-4'}`}>
         <div className="space-y-1">
           <button
-            onClick={() => setActiveTab('settings')}
+            onClick={onOpenHelpSupport || (() => setActiveTab('settings'))}
             title={isCollapsed ? "Help & Support" : undefined}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'gap-3 px-4 py-2'} rounded-lg text-xs text-[#c6c6cd] hover:text-[#d4e4fa] hover:bg-[#2c3a4c]/20 transition-all cursor-pointer`}
           >

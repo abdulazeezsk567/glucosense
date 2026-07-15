@@ -3,9 +3,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Menu, X, Bell, Siren, ShieldCheck, HeartPulse, LogOut } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Menu, 
+  X, 
+  Bell, 
+  Siren, 
+  ShieldCheck, 
+  HeartPulse, 
+  LogOut,
+  AlertCircle,
+  AlertTriangle,
+  Info,
+  Check,
+  Trash2,
+  HelpCircle
+} from 'lucide-react';
 import { TabId, Clinician } from '../types';
+
+export interface NotificationItem {
+  id: string;
+  patientId: string;
+  patientName: string;
+  type: 'low' | 'high' | 'system' | 'info';
+  message: string;
+  timestamp: string;
+  read: boolean;
+}
 
 interface HeaderProps {
   activeTab: TabId;
@@ -15,6 +39,10 @@ interface HeaderProps {
   onLogout?: () => void;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  notifications?: NotificationItem[];
+  onMarkNotificationRead?: (id: string) => void;
+  onClearAllNotifications?: () => void;
+  onOpenHelpSupport?: () => void;
 }
 
 export default function Header({
@@ -25,8 +53,27 @@ export default function Header({
   onLogout,
   isSidebarCollapsed,
   onToggleSidebar,
+  notifications = [],
+  onMarkNotificationRead,
+  onClearAllNotifications,
+  onOpenHelpSupport,
 }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+
+  // Close notification popover if clicked outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setNotificationsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const tabs: { id: TabId; label: string }[] = [
     { id: 'dashboard', label: 'Patient Dashboard' },
@@ -97,15 +144,134 @@ export default function Header({
           <span className="hidden sm:inline text-xs font-semibold">SOS Alert</span>
         </button>
 
-        {/* Notifications Mock Toggle */}
-        <div className="relative">
+        {/* Notifications Dropdown Component */}
+        <div className="relative" ref={notificationRef}>
           <button
-            onClick={() => alert("Notification Center: All clinical telemetry feeds are synchronized and running with 98.2% accuracy.")}
-            className="p-2 text-[#c6c6cd] hover:text-[#d4e4fa] hover:bg-[#2c3a4c]/50 rounded-lg transition-colors cursor-pointer"
+            onClick={() => setNotificationsOpen(!notificationsOpen)}
+            title="Notification Center"
+            className={`p-2 text-[#c6c6cd] hover:text-[#d4e4fa] hover:bg-[#2c3a4c]/50 rounded-lg transition-colors cursor-pointer relative ${notificationsOpen ? 'bg-[#2c3a4c]/50 text-[#d4e4fa]' : ''}`}
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#5adace] rounded-full"></span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] bg-[#5adace] text-[#051424] font-bold text-[9px] rounded-full flex items-center justify-center px-1 font-mono leading-none shadow shadow-[#5adace]/50">
+                {unreadCount}
+              </span>
+            )}
           </button>
+
+          {notificationsOpen && (
+            <div className="absolute right-0 mt-2.5 w-80 md:w-96 bg-[#122131] border border-[#45464d]/40 rounded-2xl shadow-2xl backdrop-blur-xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              {/* Dropdown Header */}
+              <div className="p-4 border-b border-[#45464d]/20 flex items-center justify-between bg-[#0d1c2d]/45">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-[#5adace]" />
+                  <h4 className="text-xs font-bold font-mono tracking-wider text-white uppercase">Clinical Feed</h4>
+                </div>
+                {notifications.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (onClearAllNotifications) onClearAllNotifications();
+                    }}
+                    className="text-[10px] text-[#ffb4ab] hover:text-[#ffdad6] hover:underline font-mono flex items-center gap-1 cursor-pointer border-none bg-transparent"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear All</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Notification Items List */}
+              <div className="max-h-72 overflow-y-auto divide-y divide-[#45464d]/10">
+                {notifications.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[#c6c6cd]/50 flex flex-col items-center gap-2">
+                    <Bell className="w-8 h-8 text-[#45464d]/30 animate-pulse" />
+                    <p>No active alerts or updates</p>
+                    <span className="text-[9px] font-mono opacity-60">All synchronized streams running normal</span>
+                  </div>
+                ) : (
+                  notifications.map((notif) => {
+                    return (
+                      <div
+                        key={notif.id}
+                        onClick={() => {
+                          if (notif.patientId) {
+                            setActiveTab('dashboard');
+                          }
+                          if (onMarkNotificationRead) {
+                            onMarkNotificationRead(notif.id);
+                          }
+                          setNotificationsOpen(false);
+                        }}
+                        className={`p-3.5 flex items-start gap-2.5 hover:bg-[#1c2b3c]/40 transition-colors cursor-pointer relative group ${notif.read ? 'opacity-70' : 'bg-[#5adace]/5'}`}
+                      >
+                        {/* Red dot indicator for unread */}
+                        {!notif.read && (
+                          <span className="absolute left-2 top-[18px] w-1.5 h-1.5 rounded-full bg-[#5adace]"></span>
+                        )}
+                        
+                        {/* Status Icon */}
+                        <div className="mt-0.5 shrink-0">
+                          {notif.type === 'low' && (
+                            <div className="p-1 bg-[#93000a]/20 text-[#ffb4ab] rounded-lg">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                          {notif.type === 'high' && (
+                            <div className="p-1 bg-amber-500/10 text-amber-400 rounded-lg">
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                          {notif.type === 'system' && (
+                            <div className="p-1 bg-purple-500/10 text-purple-400 rounded-lg">
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                          {notif.type === 'info' && (
+                            <div className="p-1 bg-[#5adace]/10 text-[#5adace] rounded-lg">
+                              <Info className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Content text */}
+                        <div className="flex-1 min-w-0 pl-1.5">
+                          <p className="text-xs text-[#d4e4fa] font-medium leading-normal break-words">
+                            {notif.message}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 text-[9px] text-[#c6c6cd]/60 font-mono">
+                            <span>{notif.patientName || 'System'}</span>
+                            <span>•</span>
+                            <span>{notif.timestamp}</span>
+                          </div>
+                        </div>
+
+                        {/* Single Actions */}
+                        <div className="flex items-center gap-1 shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!notif.read && onMarkNotificationRead && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMarkNotificationRead(notif.id);
+                              }}
+                              title="Mark as read"
+                              className="p-1 bg-[#1c2b3c] hover:bg-[#2c3a4c] rounded text-[#5adace] cursor-pointer border-none"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-2 border-t border-[#45464d]/10 bg-[#0d1c2d]/25 text-center text-[10px] font-mono text-[#c6c6cd]/40">
+                Secure Remote Telemetry Link Active
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

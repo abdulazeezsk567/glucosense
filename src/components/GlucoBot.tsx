@@ -23,6 +23,13 @@ export default function GlucoBot() {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Listen to external window events to open the bot
+  useEffect(() => {
+    const handleOpenBot = () => setIsOpen(true);
+    window.addEventListener('open-glucobot', handleOpenBot);
+    return () => window.removeEventListener('open-glucobot', handleOpenBot);
+  }, []);
+
   // Auto-scroll chat history
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
