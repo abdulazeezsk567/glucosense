@@ -23,6 +23,11 @@ import PatientPortal from './components/PatientPortal';
 import { TabId, Clinician, Patient, AssessmentRecord, GlucoseGoal } from './types';
 import { INITIAL_CLINICIAN, INITIAL_ASSESSMENT_HISTORY, CLINICAL_PATIENT } from './data';
 
+const getCsrfToken = (): string => {
+  const match = document.cookie.match(new RegExp('(^| )csrf_token=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : '';
+};
+
 // Helper function to play a short, subtle audio beep warning
 const playBeep = (type: 'low' | 'high') => {
   try {
@@ -334,7 +339,12 @@ export default function App() {
         console.warn('Google GSI disableAutoSelect error:', err);
       }
     }
-    fetch('/api/auth/logout', { method: 'POST' })
+    fetch('/api/auth/logout', { 
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': getCsrfToken()
+      }
+    })
       .finally(() => {
         setUserSession(null);
         setActiveTab('dashboard');

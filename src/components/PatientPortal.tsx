@@ -33,6 +33,11 @@ import {
   Check
 } from 'lucide-react';
 
+const getCsrfToken = (): string => {
+  const match = document.cookie.match(new RegExp('(^| )csrf_token=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : '';
+};
+
 interface PatientPortalProps {
   patient: {
     id: string;
@@ -497,7 +502,10 @@ export default function PatientPortal({ patient, onLogout, onUpdateProfile }: Pa
     try {
       const res = await fetch('/api/auth/profile', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
         body: JSON.stringify({
           name: editName,
           age: parseInt(editAge) || undefined,

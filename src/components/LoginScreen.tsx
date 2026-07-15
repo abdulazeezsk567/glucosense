@@ -16,6 +16,11 @@ declare global {
 
 const GOOGLE_CLIENT_ID = ((import.meta as any).env.VITE_GOOGLE_CLIENT_ID || '855423871201-placeholder.apps.googleusercontent.com');
 
+const getCsrfToken = (): string => {
+  const match = document.cookie.match(new RegExp('(^| )csrf_token=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : '';
+};
+
 interface LoginScreenProps {
   onLoginSuccess: (role: 'clinician' | 'patient', profile: any) => void;
   onPatientRegistered?: (patient: Patient) => void;
@@ -138,7 +143,10 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
         body: JSON.stringify({ email: emailId, password }),
       });
       if (!res.ok) {
@@ -162,7 +170,10 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': getCsrfToken()
+        },
         body: JSON.stringify({
           name: patientName,
           email: patientEmail,

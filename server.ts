@@ -56,6 +56,67 @@ function parseCookies(cookieHeader?: string) {
   return cookies;
 }
 
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+function signCookieValue(value: string): string {
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET);
+  hmac.update(value);
+  const signature = hmac.digest('base64url');
+  return `${value}.${signature}`;
+}
+
+function verifyCookieValue(signedValue: string): string | null {
+  if (!signedValue || !signedValue.includes('.')) return null;
+  const parts = signedValue.split('.');
+  const value = parts[0];
+  const signature = parts.slice(1).join('.');
+  if (!value || !signature) return null;
+  
+  const expectedSignature = crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64url');
+  
+  const sigBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+  if (sigBuffer.length !== expectedBuffer.length) {
+    return null;
+  }
+  if (crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+    return value;
+  }
+  return null;
+}
+
+// Global CSRF double-submit cookie middleware setup
+app.use((req, res, next) => {
+  const cookies = parseCookies(req.headers.cookie);
+  let csrfToken = cookies['csrf_token'];
+  if (!csrfToken) {
+    csrfToken = crypto.randomBytes(24).toString('hex');
+    res.cookie('csrf_token', csrfToken, {
+      path: '/',
+      secure: true,
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+    req.headers.cookie = `${req.headers.cookie || ''}; csrf_token=${csrfToken}`;
+  }
+  next();
+});
+
+function csrfProtection(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const cookies = parseCookies(req.headers.cookie);
+    const cookieToken = cookies['csrf_token'];
+    const headerToken = req.headers['x-csrf-token'] || req.headers['X-CSRF-Token'];
+
+    if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+      return res.status(403).json({ error: "CSRF token validation failed. Request untrusted." });
+    }
+  }
+  next();
+}
+
+app.use(csrfProtection);
+
 // Encrypt and Decrypt Helpers for PII (phone, physicianCode)
 const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
 const ENCRYPTION_KEY = (() => {
@@ -176,14 +237,14 @@ const USERS_FILE = path.join(process.cwd(), "users-db.json");
 const DEFAULT_USERS = [
   {
     id: 'GS-8821',
-    name: 'Sarah Jenkins',
+    name: 'Demo Patient',
     age: 42,
     type: 'Type 2',
-    cgmId: 'DEX-G6-GOOG9',
-    phone: '+1 (555) 019-2834',
-    physicianCode: 'MED-8924-XXL',
-    email: 'sarah.jenkins@glucosense.io',
-    avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDz-QKHmgjB-ETlXBg0RJ4qZxhtVseGDORvro4aZAZXXAuI8ua6v0WnoaB5LzDymMIknOAdBf2vagGnJ6MQPMZ_DuMgfmbcjcyi4V0yVfo_kPk_AwcYFmXVgseboKPeJYUFUbG_AP_K58HWIPhsTEo72tE7HsrtfoDuC_gJYdNmdLG7RzRs7e9JAkG422C9ToV8ZSVXHvf-VnyQEti2ErsqyB9VQpPkU1C1Z4TxSb-mMwZqGxl2FNpbkpntuUXd_JzWXSun_ny5r1c',
+    cgmId: 'DEX-G6-DEMO0',
+    phone: '+1 (555) 000-0000',
+    physicianCode: 'DEMO-0000-XYZ',
+    email: 'patient.demo@glucosense.io',
+    avatarUrl: '',
     role: 'patient',
     authProvider: 'credentials'
   }
@@ -193,7 +254,7 @@ function loadUsers() {
   if (!fs.existsSync(USERS_FILE)) {
     const defaultUsersWithHash = DEFAULT_USERS.map(u => ({
       ...u,
-      passwordHash: bcrypt.hashSync("password", 10)
+      passwordHash: bcrypt.hashSync("password", 12)
     }));
     try {
       const encryptedUsers = defaultUsersWithHash.map(encryptUser);
@@ -210,7 +271,7 @@ function loadUsers() {
     const migrated = parsed.map((u: any) => {
       const decrypted = decryptUser(u);
       if (!decrypted.passwordHash) {
-        decrypted.passwordHash = bcrypt.hashSync("password", 10);
+        decrypted.passwordHash = bcrypt.hashSync("password", 12);
         updated = true;
       }
       return decrypted;
@@ -224,7 +285,7 @@ function loadUsers() {
     console.error("Error reading users file, falling back to default:", err);
     const defaultUsersWithHash = DEFAULT_USERS.map(u => ({
       ...u,
-      passwordHash: bcrypt.hashSync("password", 10)
+      passwordHash: bcrypt.hashSync("password", 12)
     }));
     return defaultUsersWithHash;
   }
@@ -469,10 +530,14 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
 
     // Create random unguessable session token
     const { sessionId } = createSession(email);
-    res.setHeader(
-      'Set-Cookie',
-      `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
-    );
+    const signedToken = signCookieValue(sessionId);
+    res.cookie('session_token', signedToken, {
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
 
     // Communicate success to opener window and auto-close popup
     res.send(`
@@ -538,6 +603,60 @@ app.get(['/auth/callback', '/auth/callback/'], rateLimiter(5, 15 * 60 * 1000), a
   } catch (error: any) {
     console.error("OAuth Exchange / Signature Verification Error:", error);
     
+    if (process.env.NODE_ENV === 'production') {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Secure Handshake Failure</title>
+            <style>
+              body {
+                background-color: #051424;
+                color: #ffb4ab;
+                font-family: system-ui, -apple-system, sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                margin: 0;
+                padding: 20px;
+                box-sizing: border-box;
+              }
+              .card {
+                max-width: 480px;
+                width: 100%;
+                padding: 32px;
+                background-color: #1a0e0e;
+                border: 1px solid rgba(255, 68, 68, 0.3);
+                border-radius: 20px;
+                text-align: center;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+              }
+              h3 { color: #ffb4ab; margin-top: 0; font-size: 18px; }
+              p { font-size: 13px; color: #c6c6cd; line-height: 1.5; }
+              .btn { width: 100%; margin-top: 20px; padding: 12px; background-color: #ff4444; border: none; color: white; border-radius: 8px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+              .btn:hover { background-color: #ff6666; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h3>🔒 Identity Verification Failed</h3>
+              <p>An error occurred during secure Google identity verification. Please try again or contact your clinic supervisor.</p>
+              <button class="btn" onclick="window.close()">Dismiss Handshake Report</button>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'OAUTH_AUTH_FAILURE',
+                  error: 'Google identity verification handshake failed'
+                }, '*');
+              }
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
     // Check for common redirect_uri_mismatch or bad secret issues
     const isMismatch = error.message && (
       error.message.includes('redirect_uri_mismatch') || 
@@ -651,13 +770,15 @@ app.get('/api/auth/me', rateLimiter(60, 60 * 1000), (req, res) => {
     return res.status(401).json({ error: "No active session." });
   }
 
-  const session = getSession(sessionToken);
+  const verifiedSessionId = verifyCookieValue(sessionToken);
+  if (!verifiedSessionId) {
+    res.clearCookie('session_token', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
+    return res.status(401).json({ error: "Session expired or invalid." });
+  }
+
+  const session = getSession(verifiedSessionId);
   if (!session) {
-    // Clear invalid/expired cookie
-    res.setHeader(
-      'Set-Cookie',
-      'session_token=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
-    );
+    res.clearCookie('session_token', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
     return res.status(401).json({ error: "Session expired or invalid." });
   }
 
@@ -682,16 +803,29 @@ app.post('/api/auth/login', rateLimiter(5, 15 * 60 * 1000), (req, res) => {
   const users = loadUsers();
   const user = users.find(u => u.email.toLowerCase() === emailLower);
 
-  if (!user || !user.passwordHash || !bcrypt.compareSync(password, user.passwordHash)) {
+  let isMatch = false;
+  if (user && user.passwordHash && user.authProvider === 'credentials') {
+    isMatch = bcrypt.compareSync(password, user.passwordHash);
+  } else {
+    // Timing-safe dummy check to prevent email enumeration
+    const dummyHash = bcrypt.hashSync("dummy_password", 12);
+    bcrypt.compareSync(password, dummyHash);
+  }
+
+  if (!isMatch) {
     return res.status(401).json({ error: "Invalid email or password." });
   }
 
   const { sessionId } = createSession(emailLower);
+  const signedToken = signCookieValue(sessionId);
 
-  res.setHeader(
-    'Set-Cookie',
-    `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
-  );
+  res.cookie('session_token', signedToken, {
+    path: '/',
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
 
   res.json({ role: user.role || 'patient', profile: user });
 });
@@ -719,23 +853,27 @@ app.post('/api/auth/register', rateLimiter(5, 15 * 60 * 1000), (req, res) => {
     type: type || 'Not Specified',
     cgmId: cgmId || '',
     phone: phone || '',
-    physicianCode: physicianCode || 'MED-8924-XXL',
+    physicianCode: physicianCode || 'DEMO-0000-XYZ',
     email: emailLower,
     avatarUrl: '',
     role: 'patient',
     authProvider: 'credentials',
-    passwordHash: bcrypt.hashSync(password, 10)
+    passwordHash: bcrypt.hashSync(password, 12)
   };
 
   users.push(newUser);
   saveUsers(users);
 
   const { sessionId } = createSession(emailLower);
+  const signedToken = signCookieValue(sessionId);
 
-  res.setHeader(
-    'Set-Cookie',
-    `session_token=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=2592000`
-  );
+  res.cookie('session_token', signedToken, {
+    path: '/',
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+  });
 
   res.json({ role: 'patient', profile: newUser });
 });
@@ -749,7 +887,12 @@ app.post('/api/auth/profile', rateLimiter(10, 60 * 1000), (req, res) => {
     return res.status(401).json({ error: "No active session." });
   }
 
-  const session = getSession(sessionToken);
+  const verifiedSessionId = verifyCookieValue(sessionToken);
+  if (!verifiedSessionId) {
+    return res.status(401).json({ error: "Session expired or invalid." });
+  }
+
+  const session = getSession(verifiedSessionId);
   if (!session) {
     return res.status(401).json({ error: "Session expired or invalid." });
   }
@@ -785,17 +928,15 @@ app.post('/api/auth/logout', (req, res) => {
   const cookies = parseCookies(req.headers.cookie);
   const sessionToken = cookies['session_token'];
   if (sessionToken) {
-    invalidateSession(sessionToken);
+    const verifiedSessionId = verifyCookieValue(sessionToken);
+    if (verifiedSessionId) {
+      invalidateSession(verifiedSessionId);
+    }
   }
 
   // Clear both cookies to ensure clean state
-  res.setHeader(
-    'Set-Cookie',
-    [
-      'session_user=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0',
-      'session_token=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
-    ]
-  );
+  res.clearCookie('session_token', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
+  res.clearCookie('session_user', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
   res.json({ status: "success" });
 });
 
