@@ -123,17 +123,3 @@ Google OAuth token verification (`verifyIdToken` with signature/audience/expiry 
 - **Frontend + Express server:** Deployable to any Node host (Render, Railway, Google Cloud Run, etc.)
 - Ensure all environment variables from `.env.example` are set in your hosting provider's dashboard — never bake secrets into the build.
 
----
-
-## 👥 Authors
-
-- Gundala Nageswara Rao
-- Shaik Reshma
-- Kantla Divya Sri
-- Shaik Abdul Azeez
-
----
-
-## 📄 License
-
-Provided for academic and research purposes as part of ICEC2NT 2026.
