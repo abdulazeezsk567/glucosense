@@ -2,10 +2,6 @@
 
 **AI-powered diabetes prediction and glycemic risk assessment** using a CNN-LSTM model trained on Continuous Glucose Monitoring (CGM) data.
 
-Built with [Google AI Studio](https://ai.studio) · React + TypeScript + Vite · Express backend
-
-> ⚠️ **Prototype status:** This is a research/demo build for academic presentation. See [Security Notes](#-security-notes) before using with real patient data.
-
 ---
 
 ## ✨ Features
