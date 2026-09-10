@@ -46,7 +46,7 @@ SENSOR_HIGH_CLAMPING = 400.0
 WINDOW_SIZE = 288
 SAMPLING_INTERVAL_MIN = 5
 MAX_INTERPOLATE_MIN = 30
-MAX_GAP_SPLIT_MIN = 60
+MAX_GAP_SPLIT_MIN = 30
 MMOL_TO_MGDL = 18.0
 
 
@@ -244,7 +244,7 @@ class GlucoSenseInferenceEngine:
                 resampled_interp = resampled["glucose"].interpolate(
                     method="time",
                     limit=max_interp_steps,
-                    limit_direction="both"
+                    limit_direction="forward"
                 )
 
                 valid_mask = ~resampled_interp.isna()

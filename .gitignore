@@ -7,3 +7,17 @@ coverage/
 .env*
 !.env.example
 users-db.json
+
+# Python & Testing Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Datasets & Local Research Artifacts
+data/
+results/
+
+# Local Model Artifacts (Track only authoritative production model and scaler)
+models/*
+!models/combined_cnn_lstm.pt
+!models/combined_scaler.json
