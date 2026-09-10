@@ -158,22 +158,12 @@ export default function PredictionTab({ currentGlucose, onAddAssessment }: Predi
     }, 280);
 
     try {
-      // Call Express API endpoint /api/ml/predict (or fallback directly to port 8000)
-      let response: Response;
-      try {
-        response = await fetch('/api/ml/predict', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ readings: cgmReadings })
-        });
-      } catch (proxyErr) {
-        // Fallback directly to port 8000 if Express proxy is unavailable
-        response = await fetch('http://127.0.0.1:8000/api/ml/predict', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ readings: cgmReadings })
-        });
-      }
+      // Call Express same-origin reverse proxy API endpoint /api/ml/predict
+      const response = await fetch('/api/ml/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readings: cgmReadings })
+      });
 
       clearInterval(stepInterval);
 

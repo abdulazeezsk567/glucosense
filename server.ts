@@ -6,11 +6,12 @@ import { createServer as createViteServer } from "vite";
 import { OAuth2Client } from "google-auth-library";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { spawn, ChildProcess } from "child_process";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
@@ -1042,8 +1043,93 @@ app.post('/api/analyze-cgm', (req, res) => {
 });
 
 
+let mlChildProcess: ChildProcess | null = null;
+
+async function checkMLHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${ML_SERVICE_URL}/health`, { signal: AbortSignal.timeout(1500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureMLService(): Promise<void> {
+  if (process.env.AUTO_START_ML === 'false') {
+    return;
+  }
+
+  // If ML service is already responding, nothing to do
+  if (await checkMLHealth()) {
+    console.log(`[ML Service] Connected to active inference server at ${ML_SERVICE_URL}`);
+    return;
+  }
+
+  // Only auto-spawn if ML_SERVICE_URL points to local loopback
+  const isLocal = ML_SERVICE_URL.includes('127.0.0.1') || ML_SERVICE_URL.includes('localhost');
+  if (!isLocal) {
+    return;
+  }
+
+  const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+  const scriptPath = path.join(process.cwd(), 'ml', 'inference_server.py');
+
+  if (!fs.existsSync(scriptPath)) {
+    console.warn(`[ML Service] Script not found at ${scriptPath}, skipping auto-spawn.`);
+    return;
+  }
+
+  console.log(`[ML Service] Auto-spawning Python inference server (${pythonBin} ${scriptPath})...`);
+  try {
+    mlChildProcess = spawn(pythonBin, [scriptPath], {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'inherit', 'inherit'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    });
+
+    mlChildProcess.on('error', (err) => {
+      console.warn(`[ML Service] Failed to auto-spawn Python server:`, err.message);
+      mlChildProcess = null;
+    });
+
+    mlChildProcess.on('exit', (code, signal) => {
+      console.log(`[ML Service] Process exited with code ${code}, signal ${signal}`);
+      mlChildProcess = null;
+    });
+
+    // Wait up to 30 seconds for the server to become healthy
+    const maxRetries = 60;
+    for (let i = 0; i < maxRetries; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      if (await checkMLHealth()) {
+        console.log(`[ML Service] Successfully connected to spawned Python inference server at ${ML_SERVICE_URL}`);
+        return;
+      }
+    }
+    console.warn(`[ML Service] Warning: Python server did not respond to health checks within 30s.`);
+  } catch (err: any) {
+    console.warn(`[ML Service] Error spawning Python inference server:`, err.message);
+  }
+}
+
+// Graceful cleanup handlers
+function handleShutdown() {
+  if (mlChildProcess) {
+    console.log('[ML Service] Terminating auto-spawned Python inference process...');
+    try {
+      mlChildProcess.kill('SIGTERM');
+    } catch {}
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', handleShutdown);
+process.on('SIGINT', handleShutdown);
+
 // Vite Dev / Static Production Middleware
 async function startServer() {
+  await ensureMLService();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1059,7 +1145,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+    console.log(`Server running on http://0.0.0.0:${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   });
 }
 

@@ -19,12 +19,17 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 class TestExpressIntegration(unittest.TestCase):
     server_process = None
+    express_port = 3000
+    ml_port = 8000
 
     @classmethod
     def setUpClass(cls):
         if not os.environ.get("RUN_EXPRESS_INTEGRATION"):
             raise unittest.SkipTest("Live Express integration test requires running reverse-proxy. Set RUN_EXPRESS_INTEGRATION=1 to run.")
-        # 1. Start Python inference server in background first (port 8000)
+
+        cls.express_port = int(os.environ.get("EXPRESS_PORT", 3005))
+        cls.ml_port = int(os.environ.get("ML_PORT", 8005))
+
         is_windows = sys.platform == "win32"
         python_bin = os.path.join(PROJECT_ROOT, "venv", "Scripts" if is_windows else "bin", "python.exe" if is_windows else "python")
         if not os.path.exists(python_bin):
@@ -35,26 +40,37 @@ class TestExpressIntegration(unittest.TestCase):
             raise unittest.SkipTest("dist/server.cjs not found; skipping Express integration test.")
         node_bin = "node"
 
+        ml_env = dict(os.environ, ML_PORT=str(cls.ml_port), PYTHONUNBUFFERED="1")
         cls.ml_process = subprocess.Popen(
             [python_bin, os.path.join(PROJECT_ROOT, "ml", "inference_server.py")],
             cwd=PROJECT_ROOT,
+            env=ml_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
+        )
+
+        express_env = dict(
+            os.environ,
+            NODE_ENV="production",
+            PORT=str(cls.express_port),
+            ML_SERVICE_URL=f"http://127.0.0.1:{cls.ml_port}",
+            AUTO_START_ML="false"
         )
         cls.express_process = subprocess.Popen(
             [node_bin, server_cjs],
             cwd=PROJECT_ROOT,
-            env=dict(os.environ, NODE_ENV="production", PORT="3000"),
+            env=express_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
 
-        # Wait up to 10 seconds for Express to respond
+        # Wait up to 30 seconds for Express and ML server to become ready
         is_ready = False
-        for _ in range(20):
+        health_url = f"http://127.0.0.1:{cls.express_port}/api/health"
+        for _ in range(60):
             time.sleep(0.5)
             try:
-                with urllib.request.urlopen("http://localhost:3000/api/health") as res:
+                with urllib.request.urlopen(health_url) as res:
                     if res.status == 200 and "application/json" in res.headers.get("Content-Type", ""):
                         is_ready = True
                         break
@@ -63,7 +79,7 @@ class TestExpressIntegration(unittest.TestCase):
 
         if not is_ready:
             cls.tearDownClass()
-            raise unittest.SkipTest("Express server does not expose JSON /api/health; skipping Express integration tests.")
+            raise unittest.SkipTest("Express server did not expose JSON /api/health within 30s; skipping Express integration tests.")
 
     @classmethod
     def tearDownClass(cls):
@@ -82,7 +98,7 @@ class TestExpressIntegration(unittest.TestCase):
                 cls.ml_process.kill()
 
     def test_express_health_endpoint(self):
-        req = urllib.request.Request("http://localhost:3000/api/health")
+        req = urllib.request.Request(f"http://127.0.0.1:{self.express_port}/api/health")
         with urllib.request.urlopen(req) as res:
             self.assertEqual(res.status, 200)
             data = json.loads(res.read().decode("utf-8"))
@@ -91,7 +107,7 @@ class TestExpressIntegration(unittest.TestCase):
             self.assertEqual(data["ml_service"]["status"], "online")
 
     def test_express_model_info_endpoint(self):
-        req = urllib.request.Request("http://localhost:3000/api/model-info")
+        req = urllib.request.Request(f"http://127.0.0.1:{self.express_port}/api/model-info")
         with urllib.request.urlopen(req) as res:
             self.assertEqual(res.status, 200)
             data = json.loads(res.read().decode("utf-8"))
@@ -107,7 +123,7 @@ class TestExpressIntegration(unittest.TestCase):
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            "http://localhost:3000/api/predict",
+            f"http://127.0.0.1:{self.express_port}/api/predict",
             data=payload,
             headers={"Content-Type": "application/json"}
         )
@@ -128,7 +144,7 @@ class TestExpressIntegration(unittest.TestCase):
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            "http://localhost:3000/api/analyze-cgm",
+            f"http://127.0.0.1:{self.express_port}/api/analyze-cgm",
             data=payload,
             headers={"Content-Type": "application/json"}
         )
@@ -138,6 +154,7 @@ class TestExpressIntegration(unittest.TestCase):
             self.assertIn("summary_metrics", data)
             self.assertIn("classification", data)
             self.assertIn("risk_assessment", data)
+
 
 
 if __name__ == "__main__":

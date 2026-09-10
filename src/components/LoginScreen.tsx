@@ -53,7 +53,12 @@ export default function LoginScreen({ onLoginSuccess, onPatientRegistered }: Log
   useEffect(() => {
     const handleOAuthMessage = (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      const isAllowedOrigin =
+        origin === window.location.origin ||
+        origin.endsWith('.onrender.com') ||
+        origin.endsWith('.run.app') ||
+        origin.includes('localhost');
+      if (!isAllowedOrigin) {
         return;
       }
       

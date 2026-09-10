@@ -1,0 +1,39 @@
+# Git & GitHub
+.git
+.github
+
+# Node dependencies & local builds
+node_modules
+dist
+build
+coverage
+
+# Python & Testing artifacts
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+tests
+
+# Datasets & Local Research Artifacts
+data/
+results/
+docs/
+assets/
+
+# Local Environment & Secrets
+.env*
+!.env.example
+*.log
+users-db.json
+
+# Local IDE and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Exclude non-production models, keep ONLY frozen production artifacts
+models/*
+!models/combined_cnn_lstm.pt
+!models/combined_scaler.json

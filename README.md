@@ -164,6 +164,81 @@ Google OAuth token verification (`verifyIdToken` with signature/audience/expiry 
 
 ## 📡 Deployment
 
-- **Frontend + Express server:** Deployable to any Node host (Render, Railway, Google Cloud Run, etc.)
-- Ensure all environment variables from `.env.example` are set in your hosting provider's dashboard — never bake secrets into the build.
+GlucoSense deploys as a **unified, single-service containerized web application** on [Render](https://render.com) using Docker.
+
+```
+ONE Render Web Service (https://<glucosense-name>.onrender.com)
+  ├── Express Web Server (0.0.0.0:$PORT)
+  │     ├── Serves compiled React/Vite SPA assets (dist/)
+  │     └── Reverse-proxies ML API routes (/api/ml/*)
+  └── Python FastAPI ML Inference Engine (127.0.0.1:8000)
+        └── Loads frozen PyTorch CNN-LSTM model & scaler
+```
+
+### 1. Render Deployment (Recommended)
+
+1. Connect your repository to **Render**.
+2. Create a new **Web Service**.
+3. Select **Docker** as the Runtime environment.
+4. Set the build branch to `main`.
+5. Set the **Health Check Path** to `/api/health`.
+6. Configure the following environment variables in the Render Dashboard:
+
+| Variable | Description | Required | Default |
+| :--- | :--- | :--- | :--- |
+| `NODE_ENV` | Runtime mode | Yes | `production` |
+| `ML_SERVICE_URL` | Internal URL for Python inference server | Yes | `http://127.0.0.1:8000` |
+| `SESSION_SECRET` | Secret key for cryptographic cookie signing | Yes | Random 32-byte hex |
+| `GEMINI_API_KEY` | Google Gemini API key for clinical guidance notes | Optional | None |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID for patient/provider sign-in | Optional | None |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth Client Secret | Optional | None |
+| `APP_URL` | Public Render domain (e.g. `https://<glucosense-name>.onrender.com`) | Optional | None |
+
+> Note: If using Render Blueprints, the provided [`render.yaml`](render.yaml) automatically configures the service, health check, and generates `SESSION_SECRET`.
+
+### 2. Local Production Testing
+
+You can build and test the production application locally without development servers:
+
+```bash
+# 1. Compile frontend and server bundle
+npm run build
+
+# 2. Start production server (auto-spawns ML inference service)
+npm start
+```
+
+Visit `http://localhost:3000` to interact with the production build.
+
+Verify production health:
+```bash
+curl http://localhost:3000/api/health
+```
+
+Expected output:
+```json
+{
+  "status": "online",
+  "backend": "express",
+  "ml_service": {
+    "status": "online",
+    "service": "GlucoSense-ML",
+    "model_loaded": true,
+    "device": "cpu",
+    "model_version": "1.0.0-combined"
+  }
+}
+```
+
+### 3. Docker Local Build
+
+To build the optimized CPU-based production image locally:
+
+```bash
+docker build -t glucosense:production .
+docker run -p 3000:3000 -e SESSION_SECRET="test-secret-key-12345" glucosense:production
+```
+
+### ⚠️ Medical Safety Notice
+GlucoSense is an artificial intelligence research prototype and algorithmic risk decision-support tool. It has not been clinically validated as a diagnostic device. It does not provide medical diagnoses or replace physician guidance.
 
