@@ -15,13 +15,57 @@
 
 ---
 
-## 🧠 Model
+## 🧠 Model Architecture & ML Inference
 
-**Architecture:** CNN-LSTM (Conv1D → MaxPooling1D → LSTM → Dense → Dropout → Dense/Softmax)
+The repository integrates the frozen, verified **GlucoSense Combined 1D CNN-LSTM** deep sequence network for continuous glucose monitoring (CGM) based glycemic-risk assessment.
 
-**Classes:** Normal · Prediabetes / Early Type 2 · Type 2 Diabetes
+### 🔬 Model Specifications
+* **Locked Checkpoint**: `models/combined_cnn_lstm.pt` (Epoch 31, Val Macro-F1: 0.6168)
+* **Locked Scaler**: `models/combined_scaler.json`
+* **Network Family**: 1D CNN-LSTM (2 Conv1D blocks, MaxPool1D, 2-layer stacked LSTM, Representation Fusion, Dense Projection, Linear Head)
+* **Total Parameters**: 88,325 (88,067 trainable)
+* **Input Sequence Requirement**: Exactly 288 samples at 5-minute sampling resolution ($288 \times 5\text{ min} = 24\text{ hours}$)
+* **Input Tensor Dimensions**: `(Batch_Size, 288, 2)`
+  * **Channel 0**: Interstitial Glucose ($mg/dL$), normalized with frozen training parameters ($\mu = 125.293, \sigma = 39.791$)
+  * **Channel 1**: Glucose Rate of Change ($\Delta G$ per 5-min step, $\mu = -0.0003, \sigma = 4.4160$)
+* **Strict Biomarker Exclusion**: No laboratory biomarkers ($\text{HbA}_{1\text{c}}$, Fasting Blood Glucose), demographic attributes (age, gender, BMI), or clinical histories are used as inputs to the model.
 
-**Paper:** *A Unified Deep Learning Framework for Multi-Class Diabetes Classification and Insulin-Aware Glycemic Risk Assessment Using CGM Data*
+### 🏷️ Output Classes & Decision Rule
+The model outputs calibrated softmax probabilities across 3 mutually exclusive categories:
+1. **Normal / Euglycemic** (`Class 0`)
+2. **Prediabetes / Early Type 2** (`Class 1`)
+3. **Type 2 Diabetes Mellitus** (`Class 2`)
+
+* **Decision Rule**: Locked $\arg\max$ decision logic:
+  $$\hat{y} = \arg\max_{c \in \{0, 1, 2\}} P(Y=c \mid \mathbf{x})$$
+* **Multi-Window Aggregation**: When $\ge 2$ valid 24-hour windows exist, probabilities are aggregated via **soft probability voting** ($\bar{P} = \frac{1}{W} \sum_{w=1}^W P_w$), followed by a single $\arg\max$ operation. Experimental thresholds are strictly prohibited.
+* **Missing Data Handling**: Short gaps ($\le 30$ minutes) are linearly interpolated. Large gaps ($> 30$ min unfillable / $> 60$ min gap) break the continuous episode. If no continuous 24-hour window ($\ge 288$ samples) exists, the pipeline safely returns `status: "insufficient_data"` without fabricating a classification.
+
+### 📊 Training Datasets & Verified Research Results
+* **Training Cohorts**: Pooled Hall et al. ($N=57$) + CGMacros PhysioNet ($N=45$) across 102 total participants ($N=19$ T2D).
+* **Held-Out Combined Evaluation** ($N=16$ test participants: 9 Normal, 4 Prediabetes, 3 T2D; 102 24h windows):
+  * **Patient Accuracy**: **68.75%** (11/16)
+  * **Balanced Accuracy**: **64.81%**
+  * **Macro-F1**: **0.6317**
+  * **Per-Class Recall**: Normal: **77.8%** (7/9) · Prediabetes: **50.0%** (2/4) · Type 2 Diabetes: **66.7%** (2/3)
+  * **Per-Class Precision**: Normal: **87.5%** (7/8) · Prediabetes: **66.7%** (2/3) · Type 2 Diabetes: **40.0%** (2/5)
+* **External Validation Status (MOBILE Cohort)**: External validation was **NOT completed** because participant-level continuous CGM traces were not acquired under controlled-access DUA requirements. Zero traces were fabricated.
+* **Research Documentation & Ground Truth**:
+  * Detailed Research Summary: [`docs/FINAL_RESEARCH_STATUS.md`](docs/FINAL_RESEARCH_STATUS.md)
+  * Model Card: [`docs/FINAL_MODEL_CARD.md`](docs/FINAL_MODEL_CARD.md)
+  * Presentation Results: [`docs/PRESENTATION_RESULTS.md`](docs/PRESENTATION_RESULTS.md)
+  * Cross-Cohort Validation: [`docs/CROSS_COHORT_VALIDATION_REPORT.md`](docs/CROSS_COHORT_VALIDATION_REPORT.md)
+  * MOBILE Evaluation Report: [`docs/MOBILE_EXTERNAL_VALIDATION_RESULTS.md`](docs/MOBILE_EXTERNAL_VALIDATION_RESULTS.md)
+
+### ⚠️ Medical Safety & Regulatory Notice
+> **"This AI model is a research prototype and has not been clinically validated. It is not intended to diagnose, treat, or manage diabetes. Consult a qualified healthcare professional for medical decisions."**
+> GlucoSense is an exploratory decision-support research prototype. It does NOT make clinical diagnoses or provide treatment directives. Model classifications represent risk category indications under research benchmark protocols.
+
+### 🔌 API Endpoints
+* `POST /api/ml/predict`: Primary 24-hour CGM inference endpoint. Accepts `{ "readings": [...] }` (values or timestamped readings) and optional `"is_mmol_l": true`.
+* `GET /api/ml/model-info`: Detailed architecture specifications, training cohorts, verified holdout metrics, and safety disclaimers.
+* `GET /api/health`: Health status gateway reporting Express and Python ML backend statuses.
+* `POST /api/analyze-cgm`: CGM time-in-range telemetry analytics and neural risk classification.
 
 ---
 

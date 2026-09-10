@@ -46,20 +46,34 @@ export interface AssessmentRecord {
 
 export interface PredictionInput {
   glucose: number;
-  age: number;
-  bmi: number;
-  hba1c: number;
+  age?: number;
+  bmi?: number;
+  hba1c?: number;
 }
 
 export interface PredictionOutput {
-  classification: 'Normal' | 'Prediabetes' | 'Type 2';
+  status?: string;
+  prediction?: string;
+  classification: string;
+  predicted_class_id?: number;
   confidence: number;
   probabilities: {
     normal: number;
     prediabetes: number;
+    type2_diabetes?: number;
     type2: number;
+    [key: string]: number | undefined;
+  };
+  valid_windows?: number;
+  data_quality?: {
+    sampling_interval_minutes: number;
+    sequence_length: number;
+    total_readings_analyzed?: number;
+    coverage: number;
   };
   recommendations: string[];
+  disclaimer?: string;
+  message?: string;
 }
 
 export interface ClinicalEvent {

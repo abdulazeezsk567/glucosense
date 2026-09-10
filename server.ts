@@ -103,7 +103,11 @@ app.use((req, res, next) => {
 });
 
 function csrfProtection(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+  // Enforce CSRF validation on authenticated state-changing user sessions
+  const isStateChanging = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method);
+  const isAuthRoute = req.path.startsWith('/api/auth/') && !req.path.startsWith('/api/auth/google/url');
+
+  if (isStateChanging && isAuthRoute) {
     const cookies = parseCookies(req.headers.cookie);
     const cookieToken = cookies['csrf_token'];
     const headerToken = req.headers['x-csrf-token'] || req.headers['X-CSRF-Token'];
@@ -938,6 +942,103 @@ app.post('/api/auth/logout', (req, res) => {
   res.clearCookie('session_token', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
   res.clearCookie('session_user', { path: '/', httpOnly: true, secure: true, sameSite: 'none' });
   res.json({ status: "success" });
+});
+
+// ---------------- ML INFERENCE REVERSE PROXY ----------------
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:8000';
+
+async function forwardToMLService(req: express.Request, res: express.Response, targetPath: string) {
+  const url = `${ML_SERVICE_URL}${targetPath}`;
+  const headers: Record<string, string> = {
+    'Accept': 'application/json',
+  };
+  if (req.headers['content-type']) {
+    headers['Content-Type'] = req.headers['content-type'] as string;
+  } else {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const options: RequestInit = {
+    method: req.method,
+    headers,
+  };
+
+  if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+    options.body = JSON.stringify(req.body);
+  }
+
+  // Retry up to 3 times with small delay to tolerate initial startup latency
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const mlResponse = await fetch(url, options);
+      const responseData = await mlResponse.json().catch(() => null);
+
+      if (!mlResponse.ok) {
+        return res.status(mlResponse.status).json(
+          responseData || { error: `ML Service returned HTTP ${mlResponse.status}` }
+        );
+      }
+
+      return res.status(mlResponse.status).json(responseData);
+    } catch (err: any) {
+      lastError = err;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+
+  return res.status(503).json({
+    error: "ML Inference Service is offline or unreachable.",
+    service_url: ML_SERVICE_URL,
+    details: lastError?.message || String(lastError)
+  });
+}
+
+// ML Health Check Gateway
+app.get(['/api/health', '/api/ml/health'], async (req, res) => {
+  try {
+    const mlHealthRes = await fetch(`${ML_SERVICE_URL}/health`, { signal: AbortSignal.timeout(2500) });
+    if (mlHealthRes.ok) {
+      const mlData = await mlHealthRes.json();
+      return res.json({
+        status: "online",
+        backend: "express",
+        ml_service: mlData
+      });
+    } else {
+      return res.status(503).json({
+        status: "degraded",
+        backend: "express",
+        ml_service: { status: "degraded", http_code: mlHealthRes.status }
+      });
+    }
+  } catch (err) {
+    return res.status(503).json({
+      status: "degraded",
+      backend: "express",
+      ml_service: {
+        status: "offline",
+        message: "Python inference server (port 8000) is not currently responding."
+      }
+    });
+  }
+});
+
+// ML Model Information
+app.get(['/api/model-info', '/api/ml/model-info'], (req, res) => {
+  const target = req.path.includes('/api/ml/model-info') ? '/api/ml/model-info' : '/model-info';
+  return forwardToMLService(req, res, target);
+});
+
+// ML Prediction Endpoints (24h CGM Sequence & Legacy format support)
+app.post(['/api/predict', '/api/ml/predict'], (req, res) => {
+  const target = req.path.includes('/api/ml/predict') ? '/api/ml/predict' : '/predict';
+  return forwardToMLService(req, res, target);
+});
+
+// CGM Telemetry Analytics & Classification
+app.post('/api/analyze-cgm', (req, res) => {
+  return forwardToMLService(req, res, '/analyze-cgm');
 });
 
 

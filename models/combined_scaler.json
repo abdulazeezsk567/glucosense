@@ -1,0 +1,17 @@
+{
+  "cohort": "Combined Hall (N=57) + CGMacros (N=45)",
+  "train_participants_count": 70,
+  "feature_names": [
+    "glucose",
+    "rate_of_change"
+  ],
+  "means": [
+    125.29316711425781,
+    -0.00029589180485345423
+  ],
+  "stds": [
+    39.7910270690918,
+    4.416027069091797
+  ],
+  "window_size": 288
+}
